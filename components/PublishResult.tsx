@@ -50,6 +50,16 @@ export function PublishResult({
                 <p className="mt-1 text-sm leading-5 text-zinc-700">
                   {result.message}
                 </p>
+                {result.postUrl ? (
+                  <a
+                    className="mt-2 inline-flex text-sm font-semibold text-teal-700 underline-offset-2 hover:underline"
+                    href={result.postUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    X에서 보기
+                  </a>
+                ) : null}
               </div>
             </div>
           </div>

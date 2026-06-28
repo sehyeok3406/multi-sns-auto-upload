@@ -126,6 +126,19 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
                 >
                   {PLATFORM_LABEL[result.platform]}:{" "}
                   {result.success ? "성공" : "실패"} - {result.message}
+                  {result.postUrl ? (
+                    <>
+                      {" "}
+                      <a
+                        className="underline underline-offset-2"
+                        href={result.postUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        보기
+                      </a>
+                    </>
+                  ) : null}
                 </p>
               ))}
             </div>

@@ -19,6 +19,8 @@ export type PublishResult = {
   message: string;
   postedAt: string;
   mockPostId?: string;
+  postId?: string;
+  postUrl?: string;
 };
 
 export type PostHistoryEntry = {

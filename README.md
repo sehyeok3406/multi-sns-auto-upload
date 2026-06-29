@@ -56,6 +56,9 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 - `/dashboard` 인증 보호
 - 로그아웃
 - `/api/accounts/status` 환경 변수 기반 X / Threads 연결 상태 확인
+- `/api/auth/threads/deauthorize` Threads 제거 콜백
+- `/api/auth/threads/delete-data` Threads 데이터 삭제 콜백
+- `/data-deletion` 데이터 삭제 요청 상태 페이지
 - 게시글 작성 textarea
 - 실시간 글자 수 표시
 - X / Threads 업로드 대상 선택
@@ -83,6 +86,21 @@ X API 연동은 `lib/publisher/xPublisher.ts`의 `publishToX`에서 처리합니
 4. `APP_PASSWORD`는 팀에서 사용할 실제 비밀번호로 변경합니다.
 5. 초기 MVP에서는 X / Threads 토큰이 없으면 대시보드에 "연결 필요"로 표시됩니다.
 6. 배포 후 `/login`에서 팀 비밀번호로 접속합니다.
+
+## Meta Threads 앱 설정 URL
+
+Threads 앱 설정에서 아래 URL을 사용할 수 있습니다.
+
+```txt
+리디렉션 콜백 URL:
+https://multi-sns-auto-upload.vercel.app/api/auth/threads/callback
+
+제거 콜백 URL:
+https://multi-sns-auto-upload.vercel.app/api/auth/threads/deauthorize
+
+삭제 콜백 URL:
+https://multi-sns-auto-upload.vercel.app/api/auth/threads/delete-data
+```
 
 ## 게시 기록 저장 방식
 

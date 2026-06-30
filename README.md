@@ -45,6 +45,10 @@ THREADS_ACCESS_TOKEN=
 THREADS_USER_ID=
 META_APP_ID=
 META_APP_SECRET=
+
+GOOGLE_SHEETS_SPREADSHEET_ID=
+GOOGLE_SERVICE_ACCOUNT_EMAIL=
+GOOGLE_PRIVATE_KEY=
 ```
 
 X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Threads는 아이디와 비밀번호 직접 로그인이 아니라 Instagram/Meta 계정 인증 기반 연결을 전제로 합니다.
@@ -59,7 +63,9 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 - `/api/auth/threads/deauthorize` Threads 제거 콜백
 - `/api/auth/threads/delete-data` Threads 데이터 삭제 콜백
 - `/data-deletion` 데이터 삭제 요청 상태 페이지
+- `/api/author-presets` Google Sheets 기반 작성자 프리셋 저장/조회
 - 게시글 작성 textarea
+- 작성자 프리셋 선택 및 헤드라인 자동 삽입
 - 실시간 글자 수 표시
 - X / Threads 업로드 대상 선택
 - 게시글 미리보기
@@ -101,6 +107,24 @@ https://multi-sns-auto-upload.vercel.app/api/auth/threads/deauthorize
 삭제 콜백 URL:
 https://multi-sns-auto-upload.vercel.app/api/auth/threads/delete-data
 ```
+
+## 작성자 프리셋 저장소
+
+작성자 프리셋은 Google Sheets에 저장합니다. 시트에는 `author_presets` 탭을 만들고 첫 행을 아래처럼 구성합니다.
+
+```txt
+id | name | headline | createdAt | updatedAt
+```
+
+Vercel에는 아래 환경 변수가 필요합니다.
+
+```env
+GOOGLE_SHEETS_SPREADSHEET_ID=
+GOOGLE_SERVICE_ACCOUNT_EMAIL=
+GOOGLE_PRIVATE_KEY=
+```
+
+Google Sheets는 서비스 계정 이메일에 편집자 권한으로 공유되어 있어야 합니다. `GOOGLE_PRIVATE_KEY`는 줄바꿈이 포함된 private key이며, Vercel 환경 변수에 입력할 때 `\n` 문자열 형태로 저장해도 앱에서 자동으로 실제 줄바꿈으로 변환합니다.
 
 ## 게시 기록 저장 방식
 

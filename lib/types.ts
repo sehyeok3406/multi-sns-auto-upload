@@ -32,3 +32,11 @@ export type PostHistoryEntry = {
   requestedAt: string;
   errorMessage?: string;
 };
+
+export type AuthorPreset = {
+  id: string;
+  name: string;
+  headline: string;
+  createdAt: string;
+  updatedAt: string;
+};

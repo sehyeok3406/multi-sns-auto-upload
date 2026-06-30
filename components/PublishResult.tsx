@@ -57,7 +57,7 @@ export function PublishResult({
                     target="_blank"
                     rel="noreferrer"
                   >
-                    X에서 보기
+                    {result.platform === "threads" ? "Threads에서 보기" : "X에서 보기"}
                   </a>
                 ) : null}
               </div>

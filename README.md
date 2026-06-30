@@ -65,7 +65,7 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 - 게시글 미리보기
 - `/api/posts/publish` 게시 API
 - X는 환경 변수가 있으면 실제 X API `POST /2/tweets` 호출
-- Threads는 아직 mock 게시 유지
+- Threads는 환경 변수가 있으면 실제 Threads API 게시 호출
 - 플랫폼별 성공 / 실패 결과 표시
 - `/api/posts/history` 메모리 기반 게시 기록
 - `lib/publisher/xPublisher.ts`, `lib/publisher/threadsPublisher.ts` 게시 로직 분리
@@ -74,7 +74,7 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 
 X API 연동은 `lib/publisher/xPublisher.ts`의 `publishToX`에서 처리합니다. OAuth 1.0a 소비자 키, 액세스 토큰, Bearer Token을 Vercel Environment Variables에 등록해야 합니다.
 
-실제 Threads API 연동은 `lib/publisher/threadsPublisher.ts`의 `publishToThreads`를 교체하면 됩니다.
+Threads API 연동은 `lib/publisher/threadsPublisher.ts`의 `publishToThreads`에서 처리합니다. 텍스트 게시 기준으로 컨테이너 생성 후 publish를 호출합니다.
 
 환경 변수 검증 기준은 `lib/accounts.ts`에 분리되어 있습니다.
 

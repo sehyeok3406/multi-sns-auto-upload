@@ -17,7 +17,7 @@ export function LogoutButton() {
 
   return (
     <button
-      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400 sm:w-auto"
+      className="inline-flex h-10 w-auto items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 disabled:text-zinc-400"
       type="button"
       onClick={handleLogout}
       disabled={isLoggingOut}

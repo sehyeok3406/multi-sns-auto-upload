@@ -18,13 +18,17 @@ export function PublishResult({
   }
 
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <h3 className="text-base font-semibold">최근 게시 결과</h3>
-      <div className="mt-3 space-y-2">
+    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <div className="border-b border-zinc-200 px-4 py-3 sm:px-5">
+        <h3 className="text-base font-semibold text-zinc-950">
+          최근 게시 결과
+        </h3>
+      </div>
+      <div className="space-y-2 p-4 sm:p-5">
         {results.map((result) => (
           <div
             key={`${result.platform}-${result.postedAt}`}
-            className={`rounded-md border px-3 py-2 ${
+            className={`rounded-md border px-3 py-3 ${
               result.success
                 ? "border-emerald-200 bg-emerald-50"
                 : "border-rose-200 bg-rose-50"
@@ -52,7 +56,7 @@ export function PublishResult({
                 </p>
                 {result.postUrl ? (
                   <a
-                    className="mt-2 inline-flex text-sm font-semibold text-teal-700 underline-offset-2 hover:underline"
+                    className="mt-3 inline-flex h-9 items-center rounded-md border border-teal-200 bg-white px-3 text-sm font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50"
                     href={result.postUrl}
                     target="_blank"
                     rel="noreferrer"

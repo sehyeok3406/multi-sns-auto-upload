@@ -1,6 +1,14 @@
 "use client";
 
-import { Pencil, Plus, Save, Send, X } from "lucide-react";
+import {
+  MessageSquareText,
+  Pencil,
+  Plus,
+  Save,
+  Send,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PlatformSelector } from "@/components/PlatformSelector";
 import { PostPreview } from "@/components/PostPreview";
@@ -269,67 +277,90 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
   return (
     <section className="space-y-4">
-      <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold">게시글 작성</h2>
-          <span className="text-sm font-medium text-zinc-600">
+      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-zinc-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-md bg-teal-50 text-teal-700">
+              <MessageSquareText aria-hidden="true" className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                Composer
+              </p>
+              <h2 className="text-lg font-semibold text-zinc-950">
+                게시글 작성
+              </h2>
+            </div>
+          </div>
+          <span className="inline-flex h-8 w-fit items-center rounded-md bg-zinc-100 px-2.5 text-sm font-semibold text-zinc-700">
             {characterCount.toLocaleString("ko-KR")}자
           </span>
         </div>
 
-        <div className="mt-4 border-b border-zinc-200 pb-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-            <label className="flex-1">
-              <span className="mb-2 block text-sm font-semibold text-zinc-800">
-                작성자 프리셋
-              </span>
-              <select
-                className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm text-zinc-950 shadow-sm transition focus:border-teal-700"
-                value={selectedPresetId}
-                onChange={(event) => handlePresetSelect(event.target.value)}
-                disabled={isLoadingPresets}
-              >
-                <option value={NO_AUTHOR_PRESET}>
-                  {isLoadingPresets ? "불러오는 중" : "선택하지 않음"}
-                </option>
-                {presets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.name}
+        <div className="p-4 sm:p-5">
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <label className="flex-1">
+                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-800">
+                  <UserRound aria-hidden="true" className="h-4 w-4 text-zinc-500" />
+                  작성자 프리셋
+                </span>
+                <select
+                  className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-950 shadow-sm transition hover:border-zinc-400 focus:border-teal-700"
+                  value={selectedPresetId}
+                  onChange={(event) => handlePresetSelect(event.target.value)}
+                  disabled={isLoadingPresets}
+                >
+                  <option value={NO_AUTHOR_PRESET}>
+                    {isLoadingPresets ? "불러오는 중" : "선택하지 않음"}
                   </option>
-                ))}
-              </select>
-            </label>
+                  {presets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-            <div className="flex gap-2">
-              <button
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50"
-                type="button"
-                onClick={() => applyPreset(null)}
-              >
-                선택하지 않음
-              </button>
-              <button
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
-                type="button"
-                onClick={openEditPresetForm}
-                disabled={!selectedPreset || isLoadingPresets}
-              >
-                <Pencil aria-hidden="true" className="h-4 w-4" />
-                편집
-              </button>
-              <button
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-teal-700 bg-teal-50 px-3 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
-                type="button"
-                onClick={openCreatePresetForm}
-              >
-                <Plus aria-hidden="true" className="h-4 w-4" />
-                추가
-              </button>
+              <div className="grid grid-cols-3 gap-2 sm:flex">
+                <button
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50"
+                  type="button"
+                  onClick={() => applyPreset(null)}
+                >
+                  해제
+                </button>
+                <button
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 disabled:bg-zinc-100 disabled:text-zinc-400"
+                  type="button"
+                  onClick={openEditPresetForm}
+                  disabled={!selectedPreset || isLoadingPresets}
+                >
+                  <Pencil aria-hidden="true" className="h-4 w-4" />
+                  편집
+                </button>
+                <button
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-teal-700 bg-white px-3 text-sm font-semibold text-teal-800 shadow-sm transition hover:bg-teal-50"
+                  type="button"
+                  onClick={openCreatePresetForm}
+                >
+                  <Plus aria-hidden="true" className="h-4 w-4" />
+                  추가
+                </button>
+              </div>
             </div>
-          </div>
+
+            {selectedPreset ? (
+              <p className="mt-3 line-clamp-2 rounded-md bg-white px-3 py-2 text-sm leading-6 text-zinc-600">
+                적용 중:{" "}
+                <span className="font-medium text-zinc-900">
+                  {selectedPreset.headline}
+                </span>
+              </p>
+            ) : null}
 
           {isPresetFormOpen ? (
-            <div className="mt-4 grid gap-3 rounded-md bg-zinc-50 p-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_auto] md:items-end">
+            <div className="mt-3 grid gap-3 rounded-md border border-zinc-200 bg-white p-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_auto] md:items-end">
               <p className="text-sm font-semibold text-zinc-800 md:col-span-3">
                 {editingPresetId ? "작성자 프리셋 편집" : "작성자 프리셋 추가"}
               </p>
@@ -385,16 +416,18 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           ) : null}
 
           {presetError ? (
-            <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
               {presetError}
             </p>
           ) : null}
-        </div>
+          </div>
 
-        <label className="mt-4 block">
-          <span className="sr-only">게시글 내용</span>
+        <label className="mt-5 block">
+          <span className="mb-2 block text-sm font-semibold text-zinc-800">
+            게시글 내용
+          </span>
           <textarea
-            className="min-h-44 w-full resize-y rounded-md border border-zinc-300 bg-white p-3 text-base leading-7 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 focus:border-teal-700"
+            className="min-h-56 w-full resize-y rounded-md border border-zinc-300 bg-white p-4 text-base leading-7 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-teal-700"
             value={content}
             onChange={(event) => {
               if (!content) {
@@ -406,19 +439,19 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           />
         </label>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-5 space-y-3">
           <p className="text-sm font-semibold text-zinc-800">업로드 대상</p>
           <PlatformSelector selected={platforms} onChange={setPlatforms} />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-5">
           <PostPreview content={content} />
         </div>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-5 flex flex-col gap-3 border-t border-zinc-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <Toast message={error} />
           <button
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-zinc-400 sm:w-auto"
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:bg-zinc-400 sm:w-auto"
             type="button"
             onClick={handlePublish}
             disabled={isPublishing}
@@ -427,6 +460,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
             <Send aria-hidden="true" className="h-4 w-4" />
             {isPublishing ? "게시 중" : "게시"}
           </button>
+        </div>
         </div>
       </div>
 

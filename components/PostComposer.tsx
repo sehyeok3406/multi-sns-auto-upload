@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Save, Send } from "lucide-react";
+import { Pencil, Plus, Save, Send, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PlatformSelector } from "@/components/PlatformSelector";
 import { PostPreview } from "@/components/PostPreview";
@@ -28,10 +28,15 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [isLoadingPresets, setIsLoadingPresets] = useState(true);
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [isPresetFormOpen, setIsPresetFormOpen] = useState(false);
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
   const [presetHeadline, setPresetHeadline] = useState("");
   const trimmedContent = content.trim();
   const characterCount = useMemo(() => content.length, [content]);
+  const selectedPreset = useMemo(
+    () => presets.find((preset) => preset.id === selectedPresetId) ?? null,
+    [presets, selectedPresetId],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -120,9 +125,43 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     applyPreset(preset ?? null);
   }
 
+  function closePresetForm() {
+    setIsPresetFormOpen(false);
+    setEditingPresetId(null);
+    setPresetName("");
+    setPresetHeadline("");
+  }
+
+  function openCreatePresetForm() {
+    if (isPresetFormOpen && !editingPresetId) {
+      closePresetForm();
+      return;
+    }
+
+    setEditingPresetId(null);
+    setPresetName("");
+    setPresetHeadline("");
+    setPresetError("");
+    setIsPresetFormOpen(true);
+  }
+
+  function openEditPresetForm() {
+    if (!selectedPreset) {
+      setPresetError("수정할 작성자 프리셋을 먼저 선택해 주세요.");
+      return;
+    }
+
+    setEditingPresetId(selectedPreset.id);
+    setPresetName(selectedPreset.name);
+    setPresetHeadline(selectedPreset.headline);
+    setPresetError("");
+    setIsPresetFormOpen(true);
+  }
+
   async function handleSavePreset() {
     const name = presetName.trim();
     const headline = presetHeadline.trim();
+    const isEditing = Boolean(editingPresetId);
 
     setPresetError("");
 
@@ -135,9 +174,9 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
     try {
       const response = await fetch("/api/author-presets", {
-        method: "POST",
+        method: isEditing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, headline }),
+        body: JSON.stringify({ id: editingPresetId, name, headline }),
       });
       const data = (await response.json()) as {
         message?: string;
@@ -145,21 +184,32 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       };
 
       if (!response.ok || !data.preset) {
-        setPresetError(data.message ?? "작성자 프리셋을 저장하지 못했습니다.");
+        setPresetError(
+          data.message ??
+            `작성자 프리셋을 ${isEditing ? "수정" : "저장"}하지 못했습니다.`,
+        );
         return;
       }
 
-      setPresets((currentPresets) =>
-        [...currentPresets, data.preset as AuthorPreset].sort((left, right) =>
+      const savedPreset = data.preset;
+
+      setPresets((currentPresets) => {
+        const nextPresets = isEditing
+          ? currentPresets.map((preset) =>
+              preset.id === savedPreset.id ? savedPreset : preset,
+            )
+          : [...currentPresets, savedPreset];
+
+        return nextPresets.sort((left, right) =>
           left.name.localeCompare(right.name, "ko"),
-        ),
-      );
-      setPresetName("");
-      setPresetHeadline("");
-      setIsPresetFormOpen(false);
-      applyPreset(data.preset);
+        );
+      });
+      closePresetForm();
+      applyPreset(savedPreset);
     } catch {
-      setPresetError("작성자 프리셋 저장 중 문제가 발생했습니다.");
+      setPresetError(
+        `작성자 프리셋 ${isEditing ? "수정" : "저장"} 중 문제가 발생했습니다.`,
+      );
     } finally {
       setIsSavingPreset(false);
     }
@@ -259,9 +309,18 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
                 선택하지 않음
               </button>
               <button
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-100 disabled:text-zinc-400"
+                type="button"
+                onClick={openEditPresetForm}
+                disabled={!selectedPreset || isLoadingPresets}
+              >
+                <Pencil aria-hidden="true" className="h-4 w-4" />
+                편집
+              </button>
+              <button
                 className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-teal-700 bg-teal-50 px-3 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
                 type="button"
-                onClick={() => setIsPresetFormOpen((isOpen) => !isOpen)}
+                onClick={openCreatePresetForm}
               >
                 <Plus aria-hidden="true" className="h-4 w-4" />
                 추가
@@ -271,6 +330,9 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
           {isPresetFormOpen ? (
             <div className="mt-4 grid gap-3 rounded-md bg-zinc-50 p-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)_auto] md:items-end">
+              <p className="text-sm font-semibold text-zinc-800 md:col-span-3">
+                {editingPresetId ? "작성자 프리셋 편집" : "작성자 프리셋 추가"}
+              </p>
               <label>
                 <span className="mb-2 block text-sm font-medium text-zinc-700">
                   이름
@@ -280,6 +342,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
                   value={presetName}
                   onChange={(event) => setPresetName(event.target.value)}
                   placeholder="예: 쉬어"
+                  disabled={isSavingPreset}
                 />
               </label>
               <label>
@@ -291,17 +354,33 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
                   value={presetHeadline}
                   onChange={(event) => setPresetHeadline(event.target.value)}
                   placeholder="예: [작성자: 쉬어]"
+                  disabled={isSavingPreset}
                 />
               </label>
-              <button
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-                type="button"
-                onClick={handleSavePreset}
-                disabled={isSavingPreset}
-              >
-                <Save aria-hidden="true" className="h-4 w-4" />
-                {isSavingPreset ? "저장 중" : "저장"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-zinc-900 px-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                  type="button"
+                  onClick={handleSavePreset}
+                  disabled={isSavingPreset}
+                >
+                  <Save aria-hidden="true" className="h-4 w-4" />
+                  {isSavingPreset
+                    ? "저장 중"
+                    : editingPresetId
+                      ? "수정 저장"
+                      : "저장"}
+                </button>
+                <button
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:bg-zinc-100"
+                  type="button"
+                  onClick={closePresetForm}
+                  disabled={isSavingPreset}
+                >
+                  <X aria-hidden="true" className="h-4 w-4" />
+                  취소
+                </button>
+              </div>
             </div>
           ) : null}
 

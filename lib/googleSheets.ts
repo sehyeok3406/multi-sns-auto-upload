@@ -19,6 +19,11 @@ type GoogleSheetsValuesResponse = {
   values?: string[][];
 };
 
+type AuthorPresetRow = {
+  preset: AuthorPreset;
+  rowNumber: number;
+};
+
 const globalForGoogle = globalThis as typeof globalThis & {
   __snsAutoUploadGoogleToken?: {
     accessToken: string;
@@ -150,6 +155,29 @@ function toPreset(row: string[]): AuthorPreset | null {
   };
 }
 
+function toPresetRow(row: string[], index: number): AuthorPresetRow | null {
+  const preset = toPreset(row);
+
+  if (!preset) {
+    return null;
+  }
+
+  return {
+    preset,
+    rowNumber: index + 1,
+  };
+}
+
+function toSheetRow(preset: AuthorPreset) {
+  return [
+    preset.id,
+    preset.name,
+    preset.headline,
+    preset.createdAt,
+    preset.updatedAt,
+  ];
+}
+
 async function ensureHeaderRow() {
   const spreadsheetId = getSpreadsheetId();
   const data = await requestSheetsApi<GoogleSheetsValuesResponse>(
@@ -175,6 +203,14 @@ async function ensureHeaderRow() {
 }
 
 export async function getAuthorPresets() {
+  const rows = await getAuthorPresetRows();
+
+  return rows
+    .map(({ preset }) => preset)
+    .sort((left, right) => left.name.localeCompare(right.name, "ko"));
+}
+
+async function getAuthorPresetRows() {
   await ensureHeaderRow();
 
   const spreadsheetId = getSpreadsheetId();
@@ -185,9 +221,8 @@ export async function getAuthorPresets() {
 
   return rows
     .slice(1)
-    .map(toPreset)
-    .filter((preset): preset is AuthorPreset => Boolean(preset))
-    .sort((left, right) => left.name.localeCompare(right.name, "ko"));
+    .map((row, index) => toPresetRow(row, index + 1))
+    .filter((row): row is AuthorPresetRow => Boolean(row));
 }
 
 export async function createAuthorPreset(input: {
@@ -213,18 +248,47 @@ export async function createAuthorPreset(input: {
     {
       method: "POST",
       body: JSON.stringify({
-        values: [
-          [
-            preset.id,
-            preset.name,
-            preset.headline,
-            preset.createdAt,
-            preset.updatedAt,
-          ],
-        ],
+        values: [toSheetRow(preset)],
       }),
     },
   );
 
   return preset;
+}
+
+export async function updateAuthorPreset(input: {
+  id: string;
+  name: string;
+  headline: string;
+}) {
+  const id = input.id.trim();
+  const rows = await getAuthorPresetRows();
+  const existingRow = rows.find((row) => row.preset.id === id);
+
+  if (!existingRow) {
+    throw new Error("작성자 프리셋을 찾지 못했습니다.");
+  }
+
+  const updatedPreset: AuthorPreset = {
+    ...existingRow.preset,
+    name: input.name.trim(),
+    headline: input.headline.trim(),
+    updatedAt: new Date().toISOString(),
+  };
+  const spreadsheetId = getSpreadsheetId();
+  const updateRange = `${SHEET_NAME}!A${existingRow.rowNumber}:E${existingRow.rowNumber}`;
+
+  await requestSheetsApi(
+    `${spreadsheetId}/values/${encodeURIComponent(
+      updateRange,
+    )}?valueInputOption=RAW`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        values: [toSheetRow(updatedPreset)],
+      }),
+    },
+  );
+
+  return updatedPreset;
 }

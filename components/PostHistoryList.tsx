@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock3, RefreshCw } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import type { PostHistoryEntry } from "@/lib/types";
 
@@ -125,6 +126,20 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
             <p className="mt-3 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800">
               {entry.content}
             </p>
+            {entry.imageUrl ? (
+              <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
+                <div className="relative h-48 w-full">
+                  <Image
+                    className="object-contain"
+                    src={entry.imageUrl}
+                    alt="게시 기록 첨부 이미지"
+                    fill
+                    sizes="360px"
+                    unoptimized
+                  />
+                </div>
+              </div>
+            ) : null}
             <dl className="mt-3 space-y-1 text-xs text-zinc-600">
               <div className="flex justify-between gap-3">
                 <dt>작성</dt>

@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     content?: unknown;
     platforms?: unknown;
     createdAt?: unknown;
+    imageUrl?: unknown;
   };
 
   try {
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
     typeof body.createdAt === "string" && !Number.isNaN(Date.parse(body.createdAt))
       ? body.createdAt
       : new Date().toISOString();
+  const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
 
   if (!content) {
     return NextResponse.json(
@@ -57,10 +59,27 @@ export async function POST(request: Request) {
     );
   }
 
+  if (imageUrl) {
+    try {
+      const parsedUrl = new URL(imageUrl);
+
+      if (parsedUrl.protocol !== "https:") {
+        throw new Error("Invalid protocol");
+      }
+    } catch {
+      return NextResponse.json(
+        { message: "첨부 이미지 URL이 올바르지 않습니다." },
+        { status: 400 },
+      );
+    }
+  }
+
   const requestedAt = new Date().toISOString();
   const results: PublishResult[] = await Promise.all(
     platforms.map((platform) =>
-      platform === "x" ? publishToX(content) : publishToThreads(content),
+      platform === "x"
+        ? publishToX(content)
+        : publishToThreads(content, { imageUrl: imageUrl || undefined }),
     ),
   );
   const failedMessages = results
@@ -69,6 +88,7 @@ export async function POST(request: Request) {
   const historyEntry = addPostHistory({
     content,
     platforms,
+    imageUrl: imageUrl || undefined,
     results,
     createdAt,
     requestedAt,

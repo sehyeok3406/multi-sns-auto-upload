@@ -70,7 +70,10 @@ async function postForm(
   };
 }
 
-export async function publishToThreads(content: string): Promise<PublishResult> {
+export async function publishToThreads(
+  content: string,
+  options: { imageUrl?: string } = {},
+): Promise<PublishResult> {
   const status = getThreadsAccountStatus();
   const postedAt = new Date().toISOString();
 
@@ -86,13 +89,19 @@ export async function publishToThreads(content: string): Promise<PublishResult> 
   try {
     const userId = getRequiredEnv("THREADS_USER_ID");
     const accessToken = getRequiredEnv("THREADS_ACCESS_TOKEN");
+    const containerParams: Record<string, string> = {
+      media_type: options.imageUrl ? "IMAGE" : "TEXT",
+      text: content,
+      access_token: accessToken,
+    };
+
+    if (options.imageUrl) {
+      containerParams.image_url = options.imageUrl;
+    }
+
     const containerResponse = await postForm(
       `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(userId)}/threads`,
-      {
-        media_type: "TEXT",
-        text: content,
-        access_token: accessToken,
-      },
+      containerParams,
     );
 
     if (!containerResponse.ok) {
@@ -142,8 +151,8 @@ export async function publishToThreads(content: string): Promise<PublishResult> 
       platform: "threads",
       success: true,
       message: postId
-        ? `Threads post published successfully. Post ID: ${postId}`
-        : "Threads post published successfully.",
+        ? `Threads ${options.imageUrl ? "image " : ""}post published successfully. Post ID: ${postId}`
+        : `Threads ${options.imageUrl ? "image " : ""}post published successfully.`,
       postedAt,
       postId,
       postUrl: postId ? `https://www.threads.net/t/${postId}` : undefined,

@@ -49,6 +49,10 @@ META_APP_SECRET=
 GOOGLE_SHEETS_SPREADSHEET_ID=
 GOOGLE_SERVICE_ACCOUNT_EMAIL=
 GOOGLE_PRIVATE_KEY=
+
+BLOB_STORE_ID=
+BLOB_WEBHOOK_PUBLIC_KEY=
+BLOB_READ_WRITE_TOKEN=
 ```
 
 X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Threads는 아이디와 비밀번호 직접 로그인이 아니라 Instagram/Meta 계정 인증 기반 연결을 전제로 합니다.
@@ -66,6 +70,7 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 - `/api/author-presets` Google Sheets 기반 작성자 프리셋 저장/조회
 - 게시글 작성 textarea
 - 작성자 프리셋 선택 및 헤드라인 자동 삽입
+- Threads 이미지 첨부 및 Vercel Blob 업로드
 - 실시간 글자 수 표시
 - X / Threads 업로드 대상 선택
 - 게시글 미리보기
@@ -80,7 +85,7 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 
 X API 연동은 `lib/publisher/xPublisher.ts`의 `publishToX`에서 처리합니다. OAuth 1.0a 소비자 키, 액세스 토큰, Bearer Token을 Vercel Environment Variables에 등록해야 합니다.
 
-Threads API 연동은 `lib/publisher/threadsPublisher.ts`의 `publishToThreads`에서 처리합니다. 텍스트 게시 기준으로 컨테이너 생성 후 publish를 호출합니다.
+Threads API 연동은 `lib/publisher/threadsPublisher.ts`의 `publishToThreads`에서 처리합니다. 텍스트 게시 또는 단일 이미지 게시 기준으로 컨테이너 생성 후 publish를 호출합니다. 이미지 첨부 시 Vercel Blob에 업로드된 공개 URL을 Threads API의 `image_url`로 전달합니다.
 
 환경 변수 검증 기준은 `lib/accounts.ts`에 분리되어 있습니다.
 
@@ -126,13 +131,26 @@ GOOGLE_PRIVATE_KEY=
 
 Google Sheets는 서비스 계정 이메일에 편집자 권한으로 공유되어 있어야 합니다. `GOOGLE_PRIVATE_KEY`는 줄바꿈이 포함된 private key이며, Vercel 환경 변수에 입력할 때 `\n` 문자열 형태로 저장해도 앱에서 자동으로 실제 줄바꿈으로 변환합니다.
 
+## 이미지 첨부 저장소
+
+Threads 이미지 게시에는 공개 이미지 URL이 필요합니다. 이 프로젝트는 Vercel Blob Public Store에 이미지를 업로드한 뒤 반환된 URL을 Threads API에 전달합니다.
+
+Vercel Storage에서 Blob Store를 만들고 프로젝트에 연결하면 보통 아래 환경 변수가 자동으로 추가됩니다.
+
+```env
+BLOB_STORE_ID=
+BLOB_WEBHOOK_PUBLIC_KEY=
+```
+
+Vercel 배포 환경에서는 OIDC 기반 인증으로 Blob 업로드가 동작합니다. 로컬에서 Blob 업로드까지 테스트하려면 `BLOB_READ_WRITE_TOKEN`을 추가로 설정하는 것이 편합니다.
+
 ## 게시 기록 저장 방식
 
 MVP의 게시 기록은 `lib/postHistory.ts`의 메모리 배열에 저장됩니다. Vercel 서버리스 환경에서는 인스턴스 재시작, 스케일아웃, 콜드 스타트 시 메모리 데이터가 유지되지 않습니다. 운영 단계에서는 Supabase, Neon, PlanetScale 같은 외부 DB로 교체하는 것이 좋습니다.
 
 ## 다음 작업 후보
 
-- 이미지 첨부 UI와 mock 처리
+- 다중 이미지 첨부 및 캐러셀 게시
 - 플랫폼별 글자 수 제한 정책
 - 게시 전 확인 모달
 - 실패한 게시글 재시도

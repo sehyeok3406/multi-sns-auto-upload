@@ -1,8 +1,15 @@
 "use client";
 
 import { Eye } from "lucide-react";
+import Image from "next/image";
 
-export function PostPreview({ content }: { content: string }) {
+export function PostPreview({
+  content,
+  imageUrl,
+}: {
+  content: string;
+  imageUrl?: string;
+}) {
   return (
     <div className="border-t border-zinc-200 pt-5">
       <div className="mb-3 flex items-center gap-2">
@@ -28,6 +35,20 @@ export function PostPreview({ content }: { content: string }) {
                 </span>
               )}
             </div>
+            {imageUrl ? (
+              <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-white">
+                <div className="relative h-80 w-full">
+                  <Image
+                    className="object-contain"
+                    src={imageUrl}
+                    alt="게시 이미지 미리보기"
+                    fill
+                    sizes="(max-width: 768px) 100vw, 720px"
+                    unoptimized
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

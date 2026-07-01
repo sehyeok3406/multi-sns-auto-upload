@@ -27,6 +27,7 @@ export type PostHistoryEntry = {
   id: string;
   content: string;
   platforms: Platform[];
+  imageUrl?: string;
   results: PublishResult[];
   createdAt: string;
   requestedAt: string;

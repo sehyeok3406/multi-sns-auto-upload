@@ -1,15 +1,21 @@
 "use client";
 
 import {
+  ImageIcon,
+  Loader2,
   MessageSquareText,
   Pencil,
   Plus,
   Save,
   Send,
+  Trash2,
+  Upload,
   UserRound,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { PlatformSelector } from "@/components/PlatformSelector";
 import { PostPreview } from "@/components/PostPreview";
 import { PublishResult } from "@/components/PublishResult";
@@ -21,15 +27,22 @@ import type {
 } from "@/lib/types";
 
 const NO_AUTHOR_PRESET = "none";
+const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export function PostComposer({ onPublished }: { onPublished: () => void }) {
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [content, setContent] = useState("");
   const [platforms, setPlatforms] = useState<Platform[]>(["x", "threads"]);
   const [createdAt, setCreatedAt] = useState(() => new Date().toISOString());
   const [error, setError] = useState("");
+  const [imageError, setImageError] = useState("");
   const [presetError, setPresetError] = useState("");
   const [results, setResults] = useState<PublishResultType[] | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageUrl, setImageUrl] = useState("");
+  const [imageName, setImageName] = useState("");
   const [presets, setPresets] = useState<AuthorPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState(NO_AUTHOR_PRESET);
   const [appliedHeadline, setAppliedHeadline] = useState("");
@@ -131,6 +144,70 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
     const preset = presets.find((item) => item.id === value);
     applyPreset(preset ?? null);
+  }
+
+  function clearImage() {
+    setImageUrl("");
+    setImageName("");
+    setImageError("");
+
+    if (imageInputRef.current) {
+      imageInputRef.current.value = "";
+    }
+  }
+
+  async function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setImageError("");
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setImageError("JPG, PNG, WebP 이미지만 첨부할 수 있습니다.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE_BYTES) {
+      setImageError("이미지는 8MB 이하로 첨부해 주세요.");
+      event.target.value = "";
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+    setIsUploadingImage(true);
+
+    try {
+      const response = await fetch("/api/uploads/images", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as {
+        message?: string;
+        image?: {
+          url?: string;
+        };
+      };
+
+      if (!response.ok || !data.image?.url) {
+        setImageError(data.message ?? "이미지를 업로드하지 못했습니다.");
+        event.target.value = "";
+        return;
+      }
+
+      setImageUrl(data.image.url);
+      setImageName(file.name);
+      setPlatforms(["threads"]);
+    } catch {
+      setImageError("이미지 업로드 중 문제가 발생했습니다.");
+      event.target.value = "";
+    } finally {
+      setIsUploadingImage(false);
+    }
   }
 
   function closePresetForm() {
@@ -237,6 +314,21 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       return;
     }
 
+    if (isUploadingImage) {
+      setError("이미지 업로드가 끝난 뒤 게시해 주세요.");
+      return;
+    }
+
+    if (imageUrl && !platforms.includes("threads")) {
+      setError("이미지 첨부 게시는 현재 Threads만 지원합니다.");
+      return;
+    }
+
+    if (imageUrl && platforms.includes("x")) {
+      setError("이미지 첨부 게시를 하려면 X 선택을 해제해 주세요.");
+      return;
+    }
+
     setIsPublishing(true);
 
     try {
@@ -247,6 +339,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           content: trimmedContent,
           platforms,
           createdAt,
+          imageUrl: imageUrl || undefined,
         }),
       });
       const data = (await response.json()) as {
@@ -266,6 +359,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         setContent("");
         setSelectedPresetId(NO_AUTHOR_PRESET);
         setAppliedHeadline("");
+        clearImage();
         setCreatedAt(new Date().toISOString());
       }
     } catch {
@@ -439,13 +533,87 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           />
         </label>
 
+        <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-teal-700">
+                <ImageIcon aria-hidden="true" className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-zinc-900">이미지 첨부</p>
+                <p className="text-xs leading-5 text-zinc-500">
+                  첨부하면 업로드 대상이 Threads로 자동 전환됩니다.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input
+                ref={imageInputRef}
+                className="sr-only"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleImageChange}
+              />
+              <button
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 disabled:bg-zinc-100 disabled:text-zinc-400"
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={isUploadingImage}
+              >
+                {isUploadingImage ? (
+                  <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload aria-hidden="true" className="h-4 w-4" />
+                )}
+                {isUploadingImage ? "업로드 중" : imageUrl ? "변경" : "첨부"}
+              </button>
+              {imageUrl ? (
+                <button
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50"
+                  type="button"
+                  onClick={clearImage}
+                >
+                  <Trash2 aria-hidden="true" className="h-4 w-4" />
+                  해제
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {imageUrl ? (
+            <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-white">
+              <div className="relative h-72 w-full">
+                <Image
+                  className="object-contain"
+                  src={imageUrl}
+                  alt={
+                    imageName ? `${imageName} 미리보기` : "첨부 이미지 미리보기"
+                  }
+                  fill
+                  sizes="(max-width: 768px) 100vw, 720px"
+                  unoptimized
+                />
+              </div>
+              <p className="border-t border-zinc-200 px-3 py-2 text-xs font-medium text-zinc-600">
+                {imageName || "첨부 이미지"}
+              </p>
+            </div>
+          ) : null}
+
+          {imageError ? (
+            <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+              {imageError}
+            </p>
+          ) : null}
+        </div>
+
         <div className="mt-5 space-y-3">
           <p className="text-sm font-semibold text-zinc-800">업로드 대상</p>
           <PlatformSelector selected={platforms} onChange={setPlatforms} />
         </div>
 
         <div className="mt-5">
-          <PostPreview content={content} />
+          <PostPreview content={content} imageUrl={imageUrl} />
         </div>
 
         <div className="mt-5 flex flex-col gap-3 border-t border-zinc-200 pt-4 sm:flex-row sm:items-center sm:justify-between">

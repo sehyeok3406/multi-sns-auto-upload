@@ -1,6 +1,6 @@
 "use client";
 
-import { Layers3, MessageCircle, PenLine } from "lucide-react";
+import { ChartNoAxesColumn, Layers3, MessageCircle, PenLine } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -16,6 +16,11 @@ const NAV_ITEMS = [
     href: "/dashboard/replies",
     label: "댓글 작성",
     icon: MessageCircle,
+  },
+  {
+    href: "/dashboard/insights",
+    label: "게시 성과",
+    icon: ChartNoAxesColumn,
   },
 ];
 

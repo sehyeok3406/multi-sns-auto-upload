@@ -64,3 +64,30 @@ export type ThreadsReplyPublishResult = {
   postId?: string;
   postUrl?: string;
 };
+
+export type ThreadsInsightMetric =
+  | "views"
+  | "likes"
+  | "replies"
+  | "reposts"
+  | "quotes"
+  | "shares";
+
+export type ThreadsInsightValues = Record<ThreadsInsightMetric, number>;
+
+export type ThreadsPostInsight = {
+  post: ThreadsMediaSummary;
+  metrics: ThreadsInsightValues;
+  engagement: number;
+  engagementRate: number;
+  errorMessage?: string;
+};
+
+export type ThreadsInsightsSummary = {
+  posts: ThreadsPostInsight[];
+  totals: ThreadsInsightValues & {
+    engagement: number;
+    engagementRate: number;
+  };
+  checkedAt: string;
+};

@@ -28,6 +28,7 @@ export function PlatformSelector({
     <div className="grid grid-cols-2 gap-3" role="group" aria-label="플랫폼 선택">
       {PLATFORM_OPTIONS.map((option) => {
         const active = selected.includes(option.value);
+        const disabled = option.value === "x";
 
         return (
           <button
@@ -36,10 +37,12 @@ export function PlatformSelector({
               active
                 ? "border-teal-700 bg-teal-50 text-teal-900"
                 : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50"
-            }`}
+            } disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-50 disabled:text-zinc-400 disabled:hover:border-zinc-200 disabled:hover:bg-zinc-50`}
             type="button"
             aria-pressed={active}
+            disabled={disabled}
             onClick={() => togglePlatform(option.value)}
+            title={disabled ? "X 업로드는 현재 보류 중입니다." : option.label}
           >
             <span className="flex min-w-0 items-center gap-2">
               <span

@@ -48,7 +48,7 @@ type ReplyTarget = {
   label: string;
 };
 
-export function ThreadsInbox({ refreshToken }: { refreshToken: number }) {
+export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
   const [posts, setPosts] = useState<ThreadsMediaSummary[]>([]);
   const [selectedPostId, setSelectedPostId] = useState("");
   const [replies, setReplies] = useState<ThreadsReply[]>([]);

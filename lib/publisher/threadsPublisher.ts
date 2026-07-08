@@ -1,74 +1,15 @@
 import { getThreadsAccountStatus } from "@/lib/accounts";
+import {
+  THREADS_GRAPH_BASE_URL,
+  createThreadsErrorMessage,
+  getThreadsCredentials,
+  postThreadsForm,
+} from "@/lib/publisher/threadsApi";
 import type { PublishResult } from "@/lib/types";
-
-const THREADS_GRAPH_BASE_URL = "https://graph.threads.net/v1.0";
 
 type ThreadsApiResponse = {
   id?: string;
-  error?: {
-    message?: string;
-    type?: string;
-    code?: number;
-    error_subcode?: number;
-  };
 };
-
-function getRequiredEnv(key: string) {
-  const value = process.env[key]?.trim();
-
-  if (!value) {
-    throw new Error(`${key} is not configured.`);
-  }
-
-  return value;
-}
-
-async function readThreadsResponse(response: Response): Promise<ThreadsApiResponse | string> {
-  const text = await response.text();
-
-  if (!text) {
-    return "";
-  }
-
-  try {
-    return JSON.parse(text) as ThreadsApiResponse;
-  } catch {
-    return text;
-  }
-}
-
-function createErrorMessage(status: number, response: ThreadsApiResponse | string) {
-  if (typeof response === "string") {
-    return `Threads API request failed (${status}): ${response}`;
-  }
-
-  const error = response.error;
-  const detail = error?.message ?? error?.type;
-
-  return `Threads API request failed (${status})${
-    detail ? `: ${detail}` : "."
-  }`;
-}
-
-async function postForm(
-  url: string,
-  params: Record<string, string>,
-): Promise<{ ok: boolean; status: number; body: ThreadsApiResponse | string }> {
-  const body = new URLSearchParams(params);
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    body: await readThreadsResponse(response),
-  };
-}
 
 export async function publishToThreads(
   content: string,
@@ -87,8 +28,7 @@ export async function publishToThreads(
   }
 
   try {
-    const userId = getRequiredEnv("THREADS_USER_ID");
-    const accessToken = getRequiredEnv("THREADS_ACCESS_TOKEN");
+    const { userId, accessToken } = getThreadsCredentials();
     const containerParams: Record<string, string> = {
       media_type: options.imageUrl ? "IMAGE" : "TEXT",
       text: content,
@@ -103,7 +43,7 @@ export async function publishToThreads(
       containerParams.topic_tag = options.topicTag;
     }
 
-    const containerResponse = await postForm(
+    const containerResponse = await postThreadsForm<ThreadsApiResponse>(
       `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(userId)}/threads`,
       containerParams,
     );
@@ -112,7 +52,10 @@ export async function publishToThreads(
       return {
         platform: "threads",
         success: false,
-        message: createErrorMessage(containerResponse.status, containerResponse.body),
+        message: createThreadsErrorMessage(
+          containerResponse.status,
+          containerResponse.body,
+        ),
         postedAt,
       };
     }
@@ -131,7 +74,7 @@ export async function publishToThreads(
       };
     }
 
-    const publishResponse = await postForm(
+    const publishResponse = await postThreadsForm<ThreadsApiResponse>(
       `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(userId)}/threads_publish`,
       {
         creation_id: creationId,
@@ -143,7 +86,10 @@ export async function publishToThreads(
       return {
         platform: "threads",
         success: false,
-        message: createErrorMessage(publishResponse.status, publishResponse.body),
+        message: createThreadsErrorMessage(
+          publishResponse.status,
+          publishResponse.body,
+        ),
         postedAt,
       };
     }

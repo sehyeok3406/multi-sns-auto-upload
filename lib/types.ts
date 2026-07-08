@@ -42,3 +42,25 @@ export type AuthorPreset = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type ThreadsMediaSummary = {
+  id: string;
+  text?: string;
+  username?: string;
+  timestamp?: string;
+  permalink?: string;
+  mediaType?: string;
+  mediaUrl?: string;
+  thumbnailUrl?: string;
+  shortcode?: string;
+};
+
+export type ThreadsReply = ThreadsMediaSummary;
+
+export type ThreadsReplyPublishResult = {
+  success: boolean;
+  message: string;
+  postedAt: string;
+  postId?: string;
+  postUrl?: string;
+};

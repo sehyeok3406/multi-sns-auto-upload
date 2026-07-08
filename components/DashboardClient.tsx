@@ -6,6 +6,7 @@ import { AccountStatus } from "@/components/AccountStatus";
 import { LogoutButton } from "@/components/LogoutButton";
 import { PostComposer } from "@/components/PostComposer";
 import { PostHistoryList } from "@/components/PostHistoryList";
+import { ThreadsInbox } from "@/components/ThreadsInbox";
 
 export function DashboardClient() {
   const [historyVersion, setHistoryVersion] = useState(0);
@@ -57,6 +58,8 @@ export function DashboardClient() {
           />
           <PostHistoryList refreshToken={historyVersion} />
         </section>
+
+        <ThreadsInbox refreshToken={historyVersion} />
       </div>
     </main>
   );

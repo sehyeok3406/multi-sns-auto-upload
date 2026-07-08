@@ -3,6 +3,7 @@ import { isAuthenticated } from "@/lib/auth";
 import { addPostHistory } from "@/lib/postHistory";
 import { publishToThreads } from "@/lib/publisher/threadsPublisher";
 import { publishToX } from "@/lib/publisher/xPublisher";
+import { validateTopicTag } from "@/lib/topicTags";
 import type { Platform, PublishResult } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
     platforms?: unknown;
     createdAt?: unknown;
     imageUrl?: unknown;
+    topicTag?: unknown;
   };
 
   try {
@@ -44,6 +46,18 @@ export async function POST(request: Request) {
       ? body.createdAt
       : new Date().toISOString();
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  const topicTagInput =
+    typeof body.topicTag === "string" ? body.topicTag.trim() : "";
+  const topicTagResult = validateTopicTag(topicTagInput);
+
+  if (!topicTagResult.ok) {
+    return NextResponse.json(
+      { message: topicTagResult.message },
+      { status: 400 },
+    );
+  }
+
+  const topicTag = topicTagResult.value;
 
   if (!content) {
     return NextResponse.json(
@@ -79,7 +93,10 @@ export async function POST(request: Request) {
     platforms.map((platform) =>
       platform === "x"
         ? publishToX(content)
-        : publishToThreads(content, { imageUrl: imageUrl || undefined }),
+        : publishToThreads(content, {
+            imageUrl: imageUrl || undefined,
+            topicTag: topicTag || undefined,
+          }),
     ),
   );
   const failedMessages = results
@@ -89,6 +106,7 @@ export async function POST(request: Request) {
     content,
     platforms,
     imageUrl: imageUrl || undefined,
+    topicTag: topicTag || undefined,
     results,
     createdAt,
     requestedAt,

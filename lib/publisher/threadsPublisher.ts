@@ -72,7 +72,7 @@ async function postForm(
 
 export async function publishToThreads(
   content: string,
-  options: { imageUrl?: string } = {},
+  options: { imageUrl?: string; topicTag?: string } = {},
 ): Promise<PublishResult> {
   const status = getThreadsAccountStatus();
   const postedAt = new Date().toISOString();
@@ -97,6 +97,10 @@ export async function publishToThreads(
 
     if (options.imageUrl) {
       containerParams.image_url = options.imageUrl;
+    }
+
+    if (options.topicTag) {
+      containerParams.topic_tag = options.topicTag;
     }
 
     const containerResponse = await postForm(

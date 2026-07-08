@@ -70,6 +70,7 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 - `/api/author-presets` Google Sheets 기반 작성자 프리셋 저장/조회
 - 게시글 작성 textarea
 - 작성자 프리셋 선택 및 헤드라인 자동 삽입
+- 주제 선택 및 Threads Topic Tag 게시
 - Threads 이미지 첨부 및 Vercel Blob 업로드
 - 실시간 글자 수 표시
 - X / Threads 업로드 대상 선택
@@ -85,7 +86,7 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 
 X API 연동은 `lib/publisher/xPublisher.ts`의 `publishToX`에서 처리합니다. OAuth 1.0a 소비자 키, 액세스 토큰, Bearer Token을 Vercel Environment Variables에 등록해야 합니다.
 
-Threads API 연동은 `lib/publisher/threadsPublisher.ts`의 `publishToThreads`에서 처리합니다. 텍스트 게시 또는 단일 이미지 게시 기준으로 컨테이너 생성 후 publish를 호출합니다. 이미지 첨부 시 Vercel Blob에 업로드된 공개 URL을 Threads API의 `image_url`로 전달합니다.
+Threads API 연동은 `lib/publisher/threadsPublisher.ts`의 `publishToThreads`에서 처리합니다. 텍스트 게시 또는 단일 이미지 게시 기준으로 컨테이너 생성 후 publish를 호출합니다. 이미지 첨부 시 Vercel Blob에 업로드된 공개 URL을 Threads API의 `image_url`로 전달합니다. 주제 선택 시 Threads API의 `topic_tag` 파라미터로 함께 전달합니다.
 
 환경 변수 검증 기준은 `lib/accounts.ts`에 분리되어 있습니다.
 
@@ -143,6 +144,10 @@ BLOB_WEBHOOK_PUBLIC_KEY=
 ```
 
 Vercel 배포 환경에서는 OIDC 기반 인증으로 Blob 업로드가 동작합니다. 로컬에서 Blob 업로드까지 테스트하려면 `BLOB_READ_WRITE_TOKEN`을 추가로 설정하는 것이 편합니다.
+
+## Threads Topic Tag
+
+게시글 작성 화면에서 주제를 선택하면 Threads 게시 요청에 Topic Tag를 함께 전달합니다. 기본 주제 외에 직접 입력도 가능하며, 앱에서는 50자 이하와 일부 특수문자 제한을 검증합니다. Topic Tag는 게시글당 1개만 사용합니다.
 
 ## 게시 기록 저장 방식
 

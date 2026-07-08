@@ -28,6 +28,7 @@ export type PostHistoryEntry = {
   content: string;
   platforms: Platform[];
   imageUrl?: string;
+  topicTag?: string;
   results: PublishResult[];
   createdAt: string;
   requestedAt: string;

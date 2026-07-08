@@ -6,9 +6,11 @@ import Image from "next/image";
 export function PostPreview({
   content,
   imageUrl,
+  topicTag,
 }: {
   content: string;
   imageUrl?: string;
+  topicTag?: string;
 }) {
   return (
     <div className="border-t border-zinc-200 pt-5">
@@ -25,6 +27,11 @@ export function PostPreview({
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm font-semibold text-zinc-950">Team SNS</p>
               <span className="text-xs text-zinc-500">preview</span>
+              {topicTag ? (
+                <span className="rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
+                  {topicTag}
+                </span>
+              ) : null}
             </div>
             <div className="mt-2 min-h-16 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800">
               {content.trim() ? (

@@ -8,6 +8,7 @@ import {
   Plus,
   Save,
   Send,
+  Tag,
   Trash2,
   Upload,
   UserRound,
@@ -20,6 +21,13 @@ import { PlatformSelector } from "@/components/PlatformSelector";
 import { PostPreview } from "@/components/PostPreview";
 import { PublishResult } from "@/components/PublishResult";
 import { Toast } from "@/components/Toast";
+import {
+  CUSTOM_TOPIC_TAG,
+  NO_TOPIC_TAG,
+  TOPIC_TAG_OPTIONS,
+  normalizeTopicTag,
+  validateTopicTag,
+} from "@/lib/topicTags";
 import type {
   AuthorPreset,
   Platform,
@@ -33,7 +41,7 @@ const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [content, setContent] = useState("");
-  const [platforms, setPlatforms] = useState<Platform[]>(["x", "threads"]);
+  const [platforms, setPlatforms] = useState<Platform[]>(["threads"]);
   const [createdAt, setCreatedAt] = useState(() => new Date().toISOString());
   const [error, setError] = useState("");
   const [imageError, setImageError] = useState("");
@@ -43,6 +51,9 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
   const [imageName, setImageName] = useState("");
+  const [selectedTopicTag, setSelectedTopicTag] = useState(NO_TOPIC_TAG);
+  const [customTopicTag, setCustomTopicTag] = useState("");
+  const [topicError, setTopicError] = useState("");
   const [presets, setPresets] = useState<AuthorPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState(NO_AUTHOR_PRESET);
   const [appliedHeadline, setAppliedHeadline] = useState("");
@@ -54,6 +65,17 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [presetHeadline, setPresetHeadline] = useState("");
   const trimmedContent = content.trim();
   const characterCount = useMemo(() => content.length, [content]);
+  const topicTag = useMemo(() => {
+    if (selectedTopicTag === NO_TOPIC_TAG) {
+      return "";
+    }
+
+    if (selectedTopicTag === CUSTOM_TOPIC_TAG) {
+      return normalizeTopicTag(customTopicTag);
+    }
+
+    return normalizeTopicTag(selectedTopicTag);
+  }, [customTopicTag, selectedTopicTag]);
   const selectedPreset = useMemo(
     () => presets.find((preset) => preset.id === selectedPresetId) ?? null,
     [presets, selectedPresetId],
@@ -302,6 +324,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
   async function handlePublish() {
     setError("");
+    setTopicError("");
     setResults(null);
 
     if (!trimmedContent) {
@@ -311,6 +334,13 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
     if (platforms.length === 0) {
       setError("업로드할 플랫폼을 최소 1개 선택해 주세요.");
+      return;
+    }
+
+    const topicTagResult = validateTopicTag(topicTag);
+
+    if (!topicTagResult.ok) {
+      setTopicError(topicTagResult.message);
       return;
     }
 
@@ -340,6 +370,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           platforms,
           createdAt,
           imageUrl: imageUrl || undefined,
+          topicTag: topicTagResult.value || undefined,
         }),
       });
       const data = (await response.json()) as {
@@ -359,6 +390,9 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         setContent("");
         setSelectedPresetId(NO_AUTHOR_PRESET);
         setAppliedHeadline("");
+        setSelectedTopicTag(NO_TOPIC_TAG);
+        setCustomTopicTag("");
+        setTopicError("");
         clearImage();
         setCreatedAt(new Date().toISOString());
       }
@@ -534,6 +568,67 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         </label>
 
         <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-teal-700">
+              <Tag aria-hidden="true" className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-zinc-900">주제 선택</p>
+              <p className="text-xs leading-5 text-zinc-500">
+                선택한 주제는 Threads Topic Tag로 함께 게시됩니다.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.55fr)]">
+            <label>
+              <span className="sr-only">주제</span>
+              <select
+                className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-950 shadow-sm transition hover:border-zinc-400 focus:border-teal-700"
+                value={selectedTopicTag}
+                onChange={(event) => {
+                  setSelectedTopicTag(event.target.value);
+                  setTopicError("");
+                }}
+              >
+                <option value={NO_TOPIC_TAG}>선택하지 않음</option>
+                {TOPIC_TAG_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+                <option value={CUSTOM_TOPIC_TAG}>직접 입력</option>
+              </select>
+            </label>
+
+            {selectedTopicTag === CUSTOM_TOPIC_TAG ? (
+              <label>
+                <span className="sr-only">직접 입력 주제</span>
+                <input
+                  className="h-11 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-950 shadow-sm transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-teal-700"
+                  value={customTopicTag}
+                  onChange={(event) => {
+                    setCustomTopicTag(event.target.value);
+                    setTopicError("");
+                  }}
+                  placeholder="예: 인디게임"
+                />
+              </label>
+            ) : (
+              <div className="flex h-11 items-center rounded-md border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-500">
+                {topicTag ? `# ${topicTag}` : "Topic Tag 없음"}
+              </div>
+            )}
+          </div>
+
+          {topicError ? (
+            <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+              {topicError}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-teal-700">
@@ -613,7 +708,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         </div>
 
         <div className="mt-5">
-          <PostPreview content={content} imageUrl={imageUrl} />
+          <PostPreview content={content} imageUrl={imageUrl} topicTag={topicTag} />
         </div>
 
         <div className="mt-5 flex flex-col gap-3 border-t border-zinc-200 pt-4 sm:flex-row sm:items-center sm:justify-between">

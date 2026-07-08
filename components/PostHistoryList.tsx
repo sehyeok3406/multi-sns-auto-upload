@@ -122,6 +122,11 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
                   {PLATFORM_LABEL[platform]}
                 </span>
               ))}
+              {entry.topicTag ? (
+                <span className="rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
+                  {entry.topicTag}
+                </span>
+              ) : null}
             </div>
             <p className="mt-3 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800">
               {entry.content}

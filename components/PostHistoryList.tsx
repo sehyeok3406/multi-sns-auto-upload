@@ -3,6 +3,7 @@
 import { Clock3, RefreshCw } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { PublishErrorDetails } from "@/components/PublishErrorDetails";
 import type { PostHistoryEntry } from "@/lib/types";
 
 const PLATFORM_LABEL: Record<string, string> = {
@@ -199,7 +200,7 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
             </dl>
             <div className="mt-3 space-y-1.5">
               {entry.results.map((result) => (
-                <p
+                <div
                   key={`${entry.id}-${result.platform}`}
                   className={`rounded-md px-2.5 py-2 text-xs font-medium leading-5 ${
                     result.success
@@ -222,7 +223,10 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
                       </a>
                     </>
                   ) : null}
-                </p>
+                  {!result.success ? (
+                    <PublishErrorDetails compact detail={result.errorDetail} />
+                  ) : null}
+                </div>
               ))}
             </div>
           </article>

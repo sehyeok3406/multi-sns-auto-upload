@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { PublishErrorDetails } from "@/components/PublishErrorDetails";
 import type { PublishResult as PublishResultType } from "@/lib/types";
 
 const PLATFORM_LABEL: Record<PublishResultType["platform"], string> = {
@@ -54,6 +55,9 @@ export function PublishResult({
                 <p className="mt-1 text-sm leading-5 text-zinc-700">
                   {result.message}
                 </p>
+                {!result.success ? (
+                  <PublishErrorDetails detail={result.errorDetail} />
+                ) : null}
                 {result.threadPostIds && result.threadPostIds.length > 1 ? (
                   <p className="mt-2 text-xs font-semibold text-zinc-600">
                     타래 {result.threadPostIds.length}개 발행됨

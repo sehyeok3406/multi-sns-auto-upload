@@ -13,11 +13,29 @@ export type AccountStatuses = {
   checkedAt: string;
 };
 
+export type PublishErrorDetail = {
+  source: string;
+  stage?: string;
+  stageLabel?: string;
+  itemIndex?: number;
+  itemLabel?: string;
+  httpStatus?: number;
+  code?: number | string;
+  subcode?: number | string;
+  type?: string;
+  traceId?: string;
+  title?: string;
+  message?: string;
+  userMessage?: string;
+  retryHint?: string;
+};
+
 export type PublishResult = {
   platform: Platform;
   success: boolean;
   message: string;
   postedAt: string;
+  errorDetail?: PublishErrorDetail;
   mockPostId?: string;
   postId?: string;
   threadPostIds?: string[];

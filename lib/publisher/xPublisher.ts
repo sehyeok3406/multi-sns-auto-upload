@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { getXAccountStatus } from "@/lib/accounts";
-import type { PublishResult } from "@/lib/types";
+import type { PublishErrorDetail, PublishResult } from "@/lib/types";
 
 const X_CREATE_POST_URL = "https://api.x.com/2/tweets";
 
@@ -11,10 +11,17 @@ type XCreatePostResponse = {
   };
   detail?: string;
   title?: string;
+  status?: number;
+  type?: string;
   errors?: Array<{
+    code?: string | number;
     detail?: string;
     message?: string;
+    parameter?: string;
+    resource_id?: string;
+    resource_type?: string;
     title?: string;
+    type?: string;
   }>;
 };
 
@@ -78,11 +85,31 @@ function createOAuthHeader(method: string, url: string) {
 }
 
 function createErrorMessage(status: number, response: XCreatePostResponse | string) {
+  const detail = createXErrorDetail(status, response);
+  const codeLabel = detail.code ? `, code ${detail.code}` : "";
+  const message = detail.message ?? detail.title ?? detail.type;
+
+  return `X API request failed (${status}${codeLabel})${
+    message ? `: ${message}` : "."
+  }`;
+}
+
+function createXErrorDetail(
+  status: number,
+  response: XCreatePostResponse | string,
+): PublishErrorDetail {
   if (typeof response === "string") {
-    return `X API request failed (${status}): ${response}`;
+    return {
+      source: "X API",
+      stage: "publish",
+      stageLabel: "게시 발행",
+      httpStatus: status,
+      message: response || "Empty response body",
+    };
   }
 
-  const errorDetails =
+  const firstError = response.errors?.[0];
+  const message =
     response.errors
       ?.map((error) => error.detail ?? error.message ?? error.title)
       .filter(Boolean)
@@ -90,9 +117,20 @@ function createErrorMessage(status: number, response: XCreatePostResponse | stri
     response.detail ??
     response.title;
 
-  return `X API request failed (${status})${
-    errorDetails ? `: ${errorDetails}` : "."
-  }`;
+  return {
+    source: "X API",
+    stage: "publish",
+    stageLabel: "게시 발행",
+    httpStatus: status,
+    code: firstError?.code,
+    type: firstError?.type ?? response.type,
+    title: firstError?.title ?? response.title,
+    message,
+    retryHint:
+      status === 401 || status === 403
+        ? "X API 키, Access Token 권한, 앱 권한을 확인하세요."
+        : undefined,
+  };
 }
 
 async function readXResponse(response: Response): Promise<XCreatePostResponse | string> {
@@ -118,6 +156,13 @@ export async function publishToX(content: string): Promise<PublishResult> {
       platform: "x",
       success: false,
       message: status.message,
+      errorDetail: {
+        source: "SNS auto upload",
+        stage: "configuration",
+        stageLabel: "연결 상태 확인",
+        message: status.message,
+        retryHint: "Vercel Environment Variables에 X 필수 값을 설정하고 재배포하세요.",
+      },
       postedAt,
     };
   }
@@ -138,6 +183,7 @@ export async function publishToX(content: string): Promise<PublishResult> {
         platform: "x",
         success: false,
         message: createErrorMessage(response.status, responseBody),
+        errorDetail: createXErrorDetail(response.status, responseBody),
         postedAt,
       };
     }
@@ -162,6 +208,13 @@ export async function publishToX(content: string): Promise<PublishResult> {
       platform: "x",
       success: false,
       message: `X API request failed: ${message}`,
+      errorDetail: {
+        source: "X API",
+        stage: "network",
+        stageLabel: "요청 실행",
+        message,
+        retryHint: "네트워크 오류, 서버 런타임 오류, 환경 변수 값을 확인하세요.",
+      },
       postedAt,
     };
   }

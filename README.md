@@ -83,7 +83,7 @@ X는 X Developer 계정의 API 토큰 기반 연결을 전제로 합니다. Thre
 - `/api/posts/publish` 게시 API
 - X는 환경 변수가 있으면 실제 X API `POST /2/tweets` 호출
 - Threads는 환경 변수가 있으면 실제 Threads API 게시 호출
-- 플랫폼별 성공 / 실패 결과 표시
+- 플랫폼별 성공 / 실패 결과와 에러 단계, HTTP 상태, API 코드, trace ID 표시
 - `/api/posts/history` 메모리 기반 게시 기록
 - `lib/publisher/xPublisher.ts`, `lib/publisher/threadsPublisher.ts` 게시 로직 분리
 

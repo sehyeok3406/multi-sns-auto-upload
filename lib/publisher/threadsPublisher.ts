@@ -1,12 +1,16 @@
 import { getThreadsAccountStatus } from "@/lib/accounts";
 import {
   THREADS_GRAPH_BASE_URL,
-  createThreadsErrorMessage,
+  createThreadsErrorDetail,
   getThreadsCredentials,
   postThreadsForm,
 } from "@/lib/publisher/threadsApi";
 import { createSpoilerTextEntities } from "@/lib/threadsSpoilers";
-import type { PublishResult, ThreadsSpoilerRange } from "@/lib/types";
+import type {
+  PublishErrorDetail,
+  PublishResult,
+  ThreadsSpoilerRange,
+} from "@/lib/types";
 
 type ThreadsApiResponse = {
   id?: string;
@@ -20,6 +24,19 @@ function sleep(milliseconds: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
+}
+
+function getThreadItemLabel(index: number, total: number) {
+  return total > 1 ? `${index + 1}번 타래` : "게시글";
+}
+
+function createLocalErrorDetail(
+  overrides: Partial<PublishErrorDetail>,
+): PublishErrorDetail {
+  return {
+    source: "SNS auto upload",
+    ...overrides,
+  };
 }
 
 export async function publishToThreads(
@@ -40,6 +57,12 @@ export async function publishToThreads(
       platform: "threads",
       success: false,
       message: status.message,
+      errorDetail: createLocalErrorDetail({
+        stage: "configuration",
+        stageLabel: "연결 상태 확인",
+        message: status.message,
+        retryHint: "Vercel Environment Variables에 Threads 필수 값을 설정하고 재배포하세요.",
+      }),
       postedAt,
     };
   }
@@ -87,10 +110,22 @@ export async function publishToThreads(
         const previousPostId = publishedIds[publishedIds.length - 1];
 
         if (!previousPostId) {
+          const itemLabel = getThreadItemLabel(index, threadParts.length);
+
           return {
             platform: "threads",
             success: false,
-            message: "Threads thread publishing stopped because the previous post id is missing.",
+            message: `${itemLabel} 게시 중단: 이전 게시물 ID가 없습니다.`,
+            errorDetail: createLocalErrorDetail({
+              stage: "reply-chain",
+              stageLabel: "타래 연결",
+              itemIndex: index + 1,
+              itemLabel,
+              message:
+                "이전 게시물이 발행되지 않아 reply_to_id를 만들 수 없습니다.",
+              retryHint:
+                "첫 번째 글이 실제로 성공했는지 확인한 뒤 다시 시도하세요.",
+            }),
             postedAt,
             threadPostIds: publishedIds,
           };
@@ -105,13 +140,22 @@ export async function publishToThreads(
       );
 
       if (!containerResponse.ok) {
+        const itemLabel = getThreadItemLabel(index, threadParts.length);
+
         return {
           platform: "threads",
           success: false,
-          message: `Threads thread item ${index + 1} container failed: ${createThreadsErrorMessage(
+          message: `${itemLabel} 컨테이너 생성 실패`,
+          errorDetail: createThreadsErrorDetail(
             containerResponse.status,
             containerResponse.body,
-          )}`,
+            {
+              stage: "container",
+              stageLabel: "컨테이너 생성",
+              itemIndex: index + 1,
+              itemLabel,
+            },
+          ),
           postedAt,
           threadPostIds: publishedIds,
         };
@@ -123,12 +167,21 @@ export async function publishToThreads(
           : containerResponse.body.id;
 
       if (!creationId) {
+        const itemLabel = getThreadItemLabel(index, threadParts.length);
+
         return {
           platform: "threads",
           success: false,
-          message: `Threads API did not return a creation id for thread item ${
-            index + 1
-          }.`,
+          message: `${itemLabel} 컨테이너 ID 누락`,
+          errorDetail: createLocalErrorDetail({
+            stage: "container",
+            stageLabel: "컨테이너 생성",
+            itemIndex: index + 1,
+            itemLabel,
+            message: "Threads API가 컨테이너 ID를 반환하지 않았습니다.",
+            retryHint:
+              "동일한 게시글을 다시 시도하고, 반복되면 Meta API 응답 로그를 확인하세요.",
+          }),
           postedAt,
           threadPostIds: publishedIds,
         };
@@ -153,13 +206,22 @@ export async function publishToThreads(
       );
 
       if (!publishResponse.ok) {
+        const itemLabel = getThreadItemLabel(index, threadParts.length);
+
         return {
           platform: "threads",
           success: false,
-          message: `Threads thread item ${index + 1} publish failed: ${createThreadsErrorMessage(
+          message: `${itemLabel} 발행 실패`,
+          errorDetail: createThreadsErrorDetail(
             publishResponse.status,
             publishResponse.body,
-          )}`,
+            {
+              stage: "publish",
+              stageLabel: "게시 발행",
+              itemIndex: index + 1,
+              itemLabel,
+            },
+          ),
           postedAt,
           threadPostIds: publishedIds,
         };
@@ -201,6 +263,12 @@ export async function publishToThreads(
       platform: "threads",
       success: false,
       message: `Threads API request failed: ${message}`,
+      errorDetail: createLocalErrorDetail({
+        stage: "network",
+        stageLabel: "요청 실행",
+        message,
+        retryHint: "네트워크 오류, 서버 런타임 오류, 환경 변수 값을 확인하세요.",
+      }),
       postedAt,
     };
   }

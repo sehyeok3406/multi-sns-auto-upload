@@ -127,21 +127,61 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
                   {entry.topicTag}
                 </span>
               ) : null}
+              {entry.threadItems?.length ? (
+                <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
+                  타래 {entry.threadItems.length + 1}개
+                </span>
+              ) : null}
+              {entry.spoilerRanges?.some((ranges) => ranges.length > 0) ? (
+                <span className="rounded-md bg-zinc-900 px-2 py-1 text-xs font-semibold text-white">
+                  스포일러{" "}
+                  {entry.spoilerRanges.reduce(
+                    (total, ranges) => total + ranges.length,
+                    0,
+                  )}
+                  개
+                </span>
+              ) : null}
+              {entry.isImageSpoiler ? (
+                <span className="rounded-md bg-zinc-900 px-2 py-1 text-xs font-semibold text-white">
+                  이미지 스포일러
+                </span>
+              ) : null}
             </div>
             <p className="mt-3 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800">
               {entry.content}
             </p>
+            {entry.threadItems?.length ? (
+              <div className="mt-3 space-y-2 border-l border-zinc-200 pl-3">
+                {entry.threadItems.map((item, index) => (
+                  <p
+                    key={`${entry.id}-thread-${index}`}
+                    className="line-clamp-3 whitespace-pre-wrap break-words text-xs leading-5 text-zinc-600"
+                  >
+                    <span className="mr-1 font-semibold text-zinc-500">
+                      {index + 2}.
+                    </span>
+                    {item}
+                  </p>
+                ))}
+              </div>
+            ) : null}
             {entry.imageUrl ? (
               <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
                 <div className="relative h-48 w-full">
                   <Image
-                    className="object-contain"
+                    className={`object-contain ${entry.isImageSpoiler ? "blur-md" : ""}`}
                     src={entry.imageUrl}
                     alt="게시 기록 첨부 이미지"
                     fill
                     sizes="360px"
                     unoptimized
                   />
+                  {entry.isImageSpoiler ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/40 text-xs font-semibold text-white">
+                      스포일러 이미지
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}

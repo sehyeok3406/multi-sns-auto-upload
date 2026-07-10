@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  EyeOff,
   ImageIcon,
   Loader2,
   MessageSquareText,
@@ -28,19 +29,52 @@ import {
   normalizeTopicTag,
   validateTopicTag,
 } from "@/lib/topicTags";
+import {
+  THREADS_TEXT_SPOILER_LIMIT,
+  normalizeSpoilerRanges,
+  trimTextWithSpoilerRanges,
+} from "@/lib/threadsSpoilers";
+import {
+  THREADS_TEXT_LIMIT,
+  THREADS_TEXT_WARNING_THRESHOLD,
+  countThreadsTextCharacters,
+  validateThreadsText,
+} from "@/lib/threadsLimits";
 import type {
   AuthorPreset,
   Platform,
   PublishResult as PublishResultType,
+  ThreadsSpoilerRange,
 } from "@/lib/types";
 
 const NO_AUTHOR_PRESET = "none";
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
+type CharacterLimitState = "normal" | "warning" | "error";
+
+function getCharacterLimitState(value: string): {
+  count: number;
+  remaining: number;
+  state: CharacterLimitState;
+} {
+  const count = countThreadsTextCharacters(value);
+  const remaining = THREADS_TEXT_LIMIT - count;
+  const state =
+    count > THREADS_TEXT_LIMIT
+      ? "error"
+      : count >= THREADS_TEXT_WARNING_THRESHOLD
+        ? "warning"
+        : "normal";
+
+  return { count, remaining, state };
+}
+
 export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const textAreaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
   const [content, setContent] = useState("");
+  const [threadItems, setThreadItems] = useState<string[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>(["threads"]);
   const [createdAt, setCreatedAt] = useState(() => new Date().toISOString());
   const [error, setError] = useState("");
@@ -51,9 +85,14 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
   const [imageName, setImageName] = useState("");
+  const [isImageSpoiler, setIsImageSpoiler] = useState(false);
   const [selectedTopicTag, setSelectedTopicTag] = useState(NO_TOPIC_TAG);
   const [customTopicTag, setCustomTopicTag] = useState("");
   const [topicError, setTopicError] = useState("");
+  const [spoilerError, setSpoilerError] = useState("");
+  const [spoilerRanges, setSpoilerRanges] = useState<ThreadsSpoilerRange[][]>([
+    [],
+  ]);
   const [presets, setPresets] = useState<AuthorPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState(NO_AUTHOR_PRESET);
   const [appliedHeadline, setAppliedHeadline] = useState("");
@@ -63,8 +102,20 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [presetName, setPresetName] = useState("");
   const [presetHeadline, setPresetHeadline] = useState("");
-  const trimmedContent = content.trim();
-  const characterCount = useMemo(() => content.length, [content]);
+  const postParts = useMemo(
+    () => [content, ...threadItems],
+    [content, threadItems],
+  );
+  const characterInfo = useMemo(
+    () => postParts.map((part) => getCharacterLimitState(part)),
+    [postParts],
+  );
+  const mainCharacterInfo = characterInfo[0] ?? getCharacterLimitState("");
+  const characterCount = mainCharacterInfo.count;
+  const characterLimitState = mainCharacterInfo.state;
+  const hasCharacterLimitError = characterInfo.some(
+    (info) => info.state === "error",
+  );
   const topicTag = useMemo(() => {
     if (selectedTopicTag === NO_TOPIC_TAG) {
       return "";
@@ -151,6 +202,9 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     });
     setSelectedPresetId(preset?.id ?? NO_AUTHOR_PRESET);
     setAppliedHeadline(nextHeadline);
+    setSpoilerRanges((currentRanges) =>
+      currentRanges.map((ranges, index) => (index === 0 ? [] : ranges)),
+    );
     setPresetError("");
 
     if (!content) {
@@ -172,10 +226,145 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     setImageUrl("");
     setImageName("");
     setImageError("");
+    setIsImageSpoiler(false);
 
     if (imageInputRef.current) {
       imageInputRef.current.value = "";
     }
+  }
+
+  function getPostPartText(partIndex: number) {
+    return partIndex === 0 ? content : threadItems[partIndex - 1] ?? "";
+  }
+
+  function updateSpoilerRangesForPart(partIndex: number, text: string) {
+    setSpoilerRanges((currentRanges) =>
+      currentRanges.map((ranges, index) =>
+        index === partIndex ? normalizeSpoilerRanges(text, ranges) : ranges,
+      ),
+    );
+  }
+
+  function addSpoilerToSelection(partIndex: number) {
+    const textarea = textAreaRefs.current[partIndex];
+    const text = getPostPartText(partIndex);
+
+    setSpoilerError("");
+
+    if (!textarea) {
+      setSpoilerError("스포일러로 표시할 텍스트를 먼저 선택해 주세요.");
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+
+    if (start === end) {
+      setSpoilerError("스포일러로 표시할 텍스트를 드래그해서 선택해 주세요.");
+      return;
+    }
+
+    const currentRanges = spoilerRanges[partIndex] ?? [];
+    const nextRanges = normalizeSpoilerRanges(text, [
+      ...currentRanges,
+      { start, end },
+    ]);
+
+    if (nextRanges.length > THREADS_TEXT_SPOILER_LIMIT) {
+      setSpoilerError(
+        `한 글에서 스포일러는 최대 ${THREADS_TEXT_SPOILER_LIMIT}개까지 지정할 수 있습니다.`,
+      );
+      return;
+    }
+
+    setSpoilerRanges((currentRangeGroups) =>
+      currentRangeGroups.map((ranges, index) =>
+        index === partIndex ? nextRanges : ranges,
+      ),
+    );
+  }
+
+  function removeSpoilerRange(partIndex: number, rangeIndex: number) {
+    const text = getPostPartText(partIndex);
+
+    setSpoilerRanges((currentRangeGroups) =>
+      currentRangeGroups.map((ranges, index) =>
+        index === partIndex
+          ? normalizeSpoilerRanges(
+              text,
+              ranges.filter((_, itemIndex) => itemIndex !== rangeIndex),
+            )
+          : ranges,
+      ),
+    );
+  }
+
+  function renderSpoilerControls(partIndex: number, text: string) {
+    const ranges = normalizeSpoilerRanges(text, spoilerRanges[partIndex] ?? []);
+
+    return (
+      <div className="mt-2 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-xs font-semibold text-zinc-700 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50"
+            type="button"
+            onClick={() => addSpoilerToSelection(partIndex)}
+          >
+            <EyeOff aria-hidden="true" className="h-4 w-4" />
+            선택 영역 스포일러
+          </button>
+          <span className="text-xs text-zinc-500">
+            텍스트를 드래그한 뒤 버튼을 누르세요.
+          </span>
+        </div>
+
+        {ranges.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {ranges.map((range, rangeIndex) => (
+              <button
+                key={`${partIndex}-${range.start}-${range.end}`}
+                className="inline-flex max-w-full items-center gap-2 rounded-md bg-zinc-900 px-2.5 py-1.5 text-xs font-semibold text-white"
+                type="button"
+                onClick={() => removeSpoilerRange(partIndex, rangeIndex)}
+                title="스포일러 범위 삭제"
+              >
+                <span className="truncate">
+                  {text.slice(range.start, range.end)}
+                </span>
+                <X aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function addThreadItem() {
+    setThreadItems((currentItems) => [...currentItems, ""]);
+    setSpoilerRanges((currentRanges) => [...currentRanges, []]);
+
+    if (!content && threadItems.length === 0) {
+      setCreatedAt(new Date().toISOString());
+    }
+  }
+
+  function updateThreadItem(index: number, value: string) {
+    setThreadItems((currentItems) =>
+      currentItems.map((item, itemIndex) =>
+        itemIndex === index ? value : item,
+      ),
+    );
+    updateSpoilerRangesForPart(index + 1, value);
+  }
+
+  function removeThreadItem(index: number) {
+    setThreadItems((currentItems) =>
+      currentItems.filter((_, itemIndex) => itemIndex !== index),
+    );
+    setSpoilerRanges((currentRangeGroups) =>
+      currentRangeGroups.filter((_, partIndex) => partIndex !== index + 1),
+    );
   }
 
   async function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
@@ -325,9 +514,14 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   async function handlePublish() {
     setError("");
     setTopicError("");
+    setSpoilerError("");
     setResults(null);
+    const mainPost = trimTextWithSpoilerRanges(
+      content,
+      spoilerRanges[0] ?? [],
+    );
 
-    if (!trimmedContent) {
+    if (!mainPost.text) {
       setError("게시글 내용을 입력해 주세요.");
       return;
     }
@@ -336,6 +530,45 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       setError("업로드할 플랫폼을 최소 1개 선택해 주세요.");
       return;
     }
+
+    const trimmedThreadParts = threadItems.map((item, index) =>
+      trimTextWithSpoilerRanges(item, spoilerRanges[index + 1] ?? []),
+    );
+    const trimmedThreadItems = trimmedThreadParts.map((part) => part.text);
+    const emptyThreadItemIndex = trimmedThreadItems.findIndex((item) => !item);
+
+    if (emptyThreadItemIndex >= 0) {
+      setError(
+        `${emptyThreadItemIndex + 2}번 타래 내용을 입력하거나 삭제해 주세요.`,
+      );
+      return;
+    }
+
+    if (platforms.includes("threads")) {
+      const threadTextResults = [mainPost.text, ...trimmedThreadItems].map(
+        validateThreadsText,
+      );
+      const invalidThreadIndex = threadTextResults.findIndex(
+        (result) => !result.ok,
+      );
+
+      if (invalidThreadIndex >= 0) {
+        setError(
+          invalidThreadIndex === 0
+            ? threadTextResults[invalidThreadIndex].message
+            : `${invalidThreadIndex + 1}번 타래 글은 ${THREADS_TEXT_LIMIT}자를 초과할 수 없습니다.`,
+        );
+        return;
+      }
+    }
+
+    const publishSpoilerRanges = [
+      mainPost.ranges,
+      ...trimmedThreadParts.map((part) => part.ranges),
+    ];
+    const hasTextSpoiler = publishSpoilerRanges.some(
+      (ranges) => ranges.length > 0,
+    );
 
     const topicTagResult = validateTopicTag(topicTag);
 
@@ -366,11 +599,15 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: trimmedContent,
+          content: mainPost.text,
           platforms,
           createdAt,
           imageUrl: imageUrl || undefined,
+          isImageSpoiler: isImageSpoiler || undefined,
+          spoilerRanges: hasTextSpoiler ? publishSpoilerRanges : undefined,
           topicTag: topicTagResult.value || undefined,
+          threadItems:
+            trimmedThreadItems.length > 0 ? trimmedThreadItems : undefined,
         }),
       });
       const data = (await response.json()) as {
@@ -388,11 +625,15 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
       if (data.results.every((result) => result.success)) {
         setContent("");
+        setThreadItems([]);
         setSelectedPresetId(NO_AUTHOR_PRESET);
         setAppliedHeadline("");
         setSelectedTopicTag(NO_TOPIC_TAG);
         setCustomTopicTag("");
         setTopicError("");
+        setSpoilerError("");
+        setSpoilerRanges([[]]);
+        setIsImageSpoiler(false);
         clearImage();
         setCreatedAt(new Date().toISOString());
       }
@@ -420,8 +661,16 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
               </h2>
             </div>
           </div>
-          <span className="inline-flex h-8 w-fit items-center rounded-md bg-zinc-100 px-2.5 text-sm font-semibold text-zinc-700">
-            {characterCount.toLocaleString("ko-KR")}자
+          <span
+            className={`inline-flex h-8 w-fit items-center rounded-md px-2.5 text-sm font-semibold ${
+              characterLimitState === "error"
+                ? "bg-rose-50 text-rose-700"
+                : characterLimitState === "warning"
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-zinc-100 text-zinc-700"
+            }`}
+          >
+            {characterCount.toLocaleString("ko-KR")} / {THREADS_TEXT_LIMIT}자
           </span>
         </div>
 
@@ -551,21 +800,151 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           </div>
 
         <label className="mt-5 block">
-          <span className="mb-2 block text-sm font-semibold text-zinc-800">
-            게시글 내용
+          <span className="mb-2 flex items-center justify-between gap-3 text-sm font-semibold text-zinc-800">
+            <span>게시글 내용</span>
+            <span
+              className={`text-xs ${
+                characterLimitState === "error"
+                  ? "text-rose-700"
+                  : characterLimitState === "warning"
+                    ? "text-amber-700"
+                    : "text-zinc-500"
+              }`}
+            >
+              {characterCount >= THREADS_TEXT_WARNING_THRESHOLD
+                ? `${THREADS_TEXT_LIMIT - characterCount}자 남음`
+                : "Threads 500자 제한"}
+            </span>
           </span>
           <textarea
-            className="min-h-56 w-full resize-y rounded-md border border-zinc-300 bg-white p-4 text-base leading-7 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-teal-700"
+            ref={(element) => {
+              textAreaRefs.current[0] = element;
+            }}
+            className={`min-h-56 w-full resize-y rounded-md border bg-white p-4 text-base leading-7 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-teal-700 ${
+              characterLimitState === "error"
+                ? "border-rose-300"
+                : characterLimitState === "warning"
+                  ? "border-amber-300"
+                  : "border-zinc-300"
+            }`}
             value={content}
             onChange={(event) => {
               if (!content) {
                 setCreatedAt(new Date().toISOString());
               }
-              setContent(event.target.value);
+              const nextContent = event.target.value;
+              setContent(nextContent);
+              updateSpoilerRangesForPart(0, nextContent);
             }}
             placeholder="팀 계정에 업로드할 게시글을 작성하세요."
           />
+          {renderSpoilerControls(0, content)}
+          {characterLimitState === "error" ? (
+            <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+              Threads 게시글은 {THREADS_TEXT_LIMIT}자를 초과할 수 없습니다.
+            </p>
+          ) : characterLimitState === "warning" ? (
+            <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
+              450자를 넘었습니다. 게시 전에 문장을 조금 더 압축해 보세요.
+            </p>
+          ) : null}
         </label>
+
+        <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-zinc-900">타래 작성</p>
+              <p className="text-xs leading-5 text-zinc-500">
+                추가 글은 첫 게시물 발행 후 reply_to_id로 이어 붙입니다.
+              </p>
+            </div>
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-teal-700 bg-white px-3 text-sm font-semibold text-teal-800 shadow-sm transition hover:bg-teal-50"
+              type="button"
+              onClick={addThreadItem}
+            >
+              <Plus aria-hidden="true" className="h-4 w-4" />
+              스레드에 추가
+            </button>
+          </div>
+
+          {threadItems.length > 0 ? (
+            <div className="mt-3 space-y-3">
+              {threadItems.map((item, index) => {
+                const info = characterInfo[index + 1] ?? getCharacterLimitState(item);
+                const itemState = info.state;
+
+                return (
+                  <div
+                    key={`thread-item-${index}`}
+                    className="rounded-md border border-zinc-200 bg-white p-3"
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-700">
+                        {index + 2}/{threadItems.length + 1}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-semibold ${
+                            itemState === "error"
+                              ? "text-rose-700"
+                              : itemState === "warning"
+                                ? "text-amber-700"
+                                : "text-zinc-500"
+                          }`}
+                        >
+                          {info.count.toLocaleString("ko-KR")} /{" "}
+                          {THREADS_TEXT_LIMIT}자
+                        </span>
+                        <button
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-300 text-zinc-600 transition hover:bg-zinc-50 hover:text-rose-700"
+                          type="button"
+                          onClick={() => removeThreadItem(index)}
+                          title="타래 글 삭제"
+                        >
+                          <Trash2 aria-hidden="true" className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <textarea
+                      ref={(element) => {
+                        textAreaRefs.current[index + 1] = element;
+                      }}
+                      className={`min-h-32 w-full resize-y rounded-md border bg-white p-3 text-sm leading-6 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-teal-700 ${
+                        itemState === "error"
+                          ? "border-rose-300"
+                          : itemState === "warning"
+                            ? "border-amber-300"
+                            : "border-zinc-300"
+                      }`}
+                      value={item}
+                      onChange={(event) =>
+                        updateThreadItem(index, event.target.value)
+                      }
+                      placeholder={`${index + 2}번 타래 글을 작성하세요.`}
+                    />
+                    {renderSpoilerControls(index + 1, item)}
+                    {itemState === "error" ? (
+                      <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+                        이 타래 글은 {THREADS_TEXT_LIMIT}자를 초과할 수 없습니다.
+                      </p>
+                    ) : itemState === "warning" ? (
+                      <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
+                        {info.remaining.toLocaleString("ko-KR")}자 남았습니다.
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        {spoilerError ? (
+          <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+            {spoilerError}
+          </p>
+        ) : null}
 
         <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-3">
           <div className="flex items-center gap-2">
@@ -695,6 +1074,20 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
             </div>
           ) : null}
 
+          {imageUrl ? (
+            <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-md border border-zinc-200 bg-white px-3 py-2.5">
+              <span className="text-sm font-semibold text-zinc-800">
+                이미지를 스포일러로 표시
+              </span>
+              <input
+                className="h-5 w-5 accent-teal-700"
+                type="checkbox"
+                checked={isImageSpoiler}
+                onChange={(event) => setIsImageSpoiler(event.target.checked)}
+              />
+            </label>
+          ) : null}
+
           {imageError ? (
             <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
               {imageError}
@@ -708,7 +1101,14 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         </div>
 
         <div className="mt-5">
-          <PostPreview content={content} imageUrl={imageUrl} topicTag={topicTag} />
+          <PostPreview
+            content={content}
+            imageUrl={imageUrl}
+            isImageSpoiler={isImageSpoiler}
+            spoilerRanges={spoilerRanges}
+            threadItems={threadItems}
+            topicTag={topicTag}
+          />
         </div>
 
         <div className="mt-5 flex flex-col gap-3 border-t border-zinc-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -717,7 +1117,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:bg-zinc-400 sm:w-auto"
             type="button"
             onClick={handlePublish}
-            disabled={isPublishing}
+            disabled={isPublishing || hasCharacterLimitError}
             title="게시"
           >
             <Send aria-hidden="true" className="h-4 w-4" />

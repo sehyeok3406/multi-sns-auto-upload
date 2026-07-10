@@ -20,15 +20,24 @@ export type PublishResult = {
   postedAt: string;
   mockPostId?: string;
   postId?: string;
+  threadPostIds?: string[];
   postUrl?: string;
+};
+
+export type ThreadsSpoilerRange = {
+  start: number;
+  end: number;
 };
 
 export type PostHistoryEntry = {
   id: string;
   content: string;
+  threadItems?: string[];
   platforms: Platform[];
   imageUrl?: string;
+  isImageSpoiler?: boolean;
   topicTag?: string;
+  spoilerRanges?: ThreadsSpoilerRange[][];
   results: PublishResult[];
   createdAt: string;
   requestedAt: string;

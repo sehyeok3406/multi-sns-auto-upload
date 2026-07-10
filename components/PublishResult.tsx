@@ -54,6 +54,11 @@ export function PublishResult({
                 <p className="mt-1 text-sm leading-5 text-zinc-700">
                   {result.message}
                 </p>
+                {result.threadPostIds && result.threadPostIds.length > 1 ? (
+                  <p className="mt-2 text-xs font-semibold text-zinc-600">
+                    타래 {result.threadPostIds.length}개 발행됨
+                  </p>
+                ) : null}
                 {result.postUrl ? (
                   <a
                     className="mt-3 inline-flex h-9 items-center rounded-md border border-teal-200 bg-white px-3 text-sm font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50"

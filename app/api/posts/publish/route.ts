@@ -4,12 +4,96 @@ import { addPostHistory } from "@/lib/postHistory";
 import { publishToThreads } from "@/lib/publisher/threadsPublisher";
 import { publishToX } from "@/lib/publisher/xPublisher";
 import { validateTopicTag } from "@/lib/topicTags";
-import type { Platform, PublishResult } from "@/lib/types";
+import {
+  THREADS_TEXT_SPOILER_LIMIT,
+  normalizeSpoilerRanges,
+} from "@/lib/threadsSpoilers";
+import { THREADS_TEXT_LIMIT, validateThreadsText } from "@/lib/threadsLimits";
+import type { Platform, PublishResult, ThreadsSpoilerRange } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 function isPlatform(value: unknown): value is Platform {
   return value === "x" || value === "threads";
+}
+
+function parseSpoilerRange(value: unknown): ThreadsSpoilerRange | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const range = value as { end?: unknown; start?: unknown };
+
+  if (
+    typeof range.start !== "number" ||
+    typeof range.end !== "number" ||
+    !Number.isInteger(range.start) ||
+    !Number.isInteger(range.end)
+  ) {
+    return null;
+  }
+
+  return {
+    start: range.start,
+    end: range.end,
+  };
+}
+
+function parseSpoilerRanges(value: unknown, postParts: string[]) {
+  if (value === undefined) {
+    return {
+      ok: true as const,
+      ranges: postParts.map(() => [] as ThreadsSpoilerRange[]),
+    };
+  }
+
+  if (!Array.isArray(value)) {
+    return {
+      ok: false as const,
+      message: "스포일러 범위 형식이 올바르지 않습니다.",
+    };
+  }
+
+  const ranges: ThreadsSpoilerRange[][] = [];
+
+  for (let index = 0; index < postParts.length; index += 1) {
+    const partRanges = value[index] ?? [];
+
+    if (!Array.isArray(partRanges)) {
+      return {
+        ok: false as const,
+        message: "스포일러 범위 형식이 올바르지 않습니다.",
+      };
+    }
+
+    const parsedRanges = partRanges.map(parseSpoilerRange);
+
+    if (parsedRanges.some((range) => range === null)) {
+      return {
+        ok: false as const,
+        message: "스포일러 범위 형식이 올바르지 않습니다.",
+      };
+    }
+
+    const normalizedRanges = normalizeSpoilerRanges(
+      postParts[index],
+      parsedRanges as ThreadsSpoilerRange[],
+    );
+
+    if (normalizedRanges.length > THREADS_TEXT_SPOILER_LIMIT) {
+      return {
+        ok: false as const,
+        message: `${index + 1}번 글의 스포일러는 최대 ${THREADS_TEXT_SPOILER_LIMIT}개까지 지정할 수 있습니다.`,
+      };
+    }
+
+    ranges.push(normalizedRanges);
+  }
+
+  return {
+    ok: true as const,
+    ranges,
+  };
 }
 
 export async function POST(request: Request) {
@@ -25,6 +109,9 @@ export async function POST(request: Request) {
     platforms?: unknown;
     createdAt?: unknown;
     imageUrl?: unknown;
+    isImageSpoiler?: unknown;
+    spoilerRanges?: unknown;
+    threadItems?: unknown;
     topicTag?: unknown;
   };
 
@@ -46,6 +133,14 @@ export async function POST(request: Request) {
       ? body.createdAt
       : new Date().toISOString();
   const imageUrl = typeof body.imageUrl === "string" ? body.imageUrl.trim() : "";
+  const hasThreadItems = body.threadItems !== undefined;
+  const threadItemsInput = Array.isArray(body.threadItems)
+    ? body.threadItems
+    : [];
+  const threadItems = threadItemsInput.map((item) =>
+    typeof item === "string" ? item.trim() : "",
+  );
+  const isImageSpoiler = body.isImageSpoiler === true;
   const topicTagInput =
     typeof body.topicTag === "string" ? body.topicTag.trim() : "";
   const topicTagResult = validateTopicTag(topicTagInput);
@@ -73,6 +168,61 @@ export async function POST(request: Request) {
     );
   }
 
+  if (hasThreadItems && !Array.isArray(body.threadItems)) {
+    return NextResponse.json(
+      { message: "타래 글 형식이 올바르지 않습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (threadItems.length > 0 && !platforms.includes("threads")) {
+    return NextResponse.json(
+      { message: "타래 작성은 Threads 게시에서만 사용할 수 있습니다." },
+      { status: 400 },
+    );
+  }
+
+  const emptyThreadItemIndex = threadItems.findIndex((item) => !item);
+
+  if (emptyThreadItemIndex >= 0) {
+    return NextResponse.json(
+      {
+        message: `${emptyThreadItemIndex + 2}번 타래 내용을 입력하거나 삭제해 주세요.`,
+      },
+      { status: 400 },
+    );
+  }
+
+  const postParts = [content, ...threadItems];
+
+  if (platforms.includes("threads")) {
+    const threadTextResults = postParts.map(validateThreadsText);
+    const invalidThreadIndex = threadTextResults.findIndex(
+      (result) => !result.ok,
+    );
+
+    if (invalidThreadIndex >= 0) {
+      return NextResponse.json(
+        {
+          message:
+            invalidThreadIndex === 0
+              ? threadTextResults[invalidThreadIndex].message
+              : `${invalidThreadIndex + 1}번 타래 글은 ${THREADS_TEXT_LIMIT}자를 초과할 수 없습니다.`,
+        },
+        { status: 400 },
+      );
+    }
+  }
+
+  const spoilerRangesResult = parseSpoilerRanges(body.spoilerRanges, postParts);
+
+  if (!spoilerRangesResult.ok) {
+    return NextResponse.json(
+      { message: spoilerRangesResult.message },
+      { status: 400 },
+    );
+  }
+
   if (imageUrl) {
     try {
       const parsedUrl = new URL(imageUrl);
@@ -88,6 +238,23 @@ export async function POST(request: Request) {
     }
   }
 
+  if (isImageSpoiler && !imageUrl) {
+    return NextResponse.json(
+      { message: "이미지 스포일러는 이미지 첨부 게시에서만 사용할 수 있습니다." },
+      { status: 400 },
+    );
+  }
+
+  const spoilerRanges = spoilerRangesResult.ranges;
+  const hasTextSpoiler = spoilerRanges.some((ranges) => ranges.length > 0);
+
+  if ((hasTextSpoiler || isImageSpoiler) && !platforms.includes("threads")) {
+    return NextResponse.json(
+      { message: "스포일러는 Threads 게시에서만 사용할 수 있습니다." },
+      { status: 400 },
+    );
+  }
+
   const requestedAt = new Date().toISOString();
   const results: PublishResult[] = await Promise.all(
     platforms.map((platform) =>
@@ -95,6 +262,9 @@ export async function POST(request: Request) {
         ? publishToX(content)
         : publishToThreads(content, {
             imageUrl: imageUrl || undefined,
+            isImageSpoiler,
+            spoilerRanges: hasTextSpoiler ? spoilerRanges : undefined,
+            threadItems: threadItems.length > 0 ? threadItems : undefined,
             topicTag: topicTag || undefined,
           }),
     ),
@@ -106,6 +276,9 @@ export async function POST(request: Request) {
     content,
     platforms,
     imageUrl: imageUrl || undefined,
+    isImageSpoiler: isImageSpoiler || undefined,
+    spoilerRanges: hasTextSpoiler ? spoilerRanges : undefined,
+    threadItems: threadItems.length > 0 ? threadItems : undefined,
     topicTag: topicTag || undefined,
     results,
     createdAt,

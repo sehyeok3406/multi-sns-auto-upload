@@ -47,6 +47,12 @@ export type ThreadsSpoilerRange = {
   end: number;
 };
 
+export type ThreadsPostMedia = {
+  imageUrl?: string;
+  imageName?: string;
+  isImageSpoiler?: boolean;
+};
+
 export type PostHistoryEntry = {
   id: string;
   content: string;
@@ -54,6 +60,7 @@ export type PostHistoryEntry = {
   platforms: Platform[];
   imageUrl?: string;
   isImageSpoiler?: boolean;
+  threadMedia?: ThreadsPostMedia[];
   topicTag?: string;
   spoilerRanges?: ThreadsSpoilerRange[][];
   results: PublishResult[];

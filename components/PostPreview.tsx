@@ -4,7 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { normalizeSpoilerRanges } from "@/lib/threadsSpoilers";
-import type { ThreadsSpoilerRange } from "@/lib/types";
+import type { ThreadsPostMedia, ThreadsSpoilerRange } from "@/lib/types";
 
 function PreviewText({
   emptyLabel,
@@ -51,6 +51,7 @@ export function PostPreview({
   imageUrl,
   isImageSpoiler = false,
   spoilerRanges = [],
+  threadMedia = [],
   threadItems = [],
   topicTag,
 }: {
@@ -58,10 +59,44 @@ export function PostPreview({
   imageUrl?: string;
   isImageSpoiler?: boolean;
   spoilerRanges?: ThreadsSpoilerRange[][];
+  threadMedia?: ThreadsPostMedia[];
   threadItems?: string[];
   topicTag?: string;
 }) {
   const totalItems = threadItems.length + 1;
+  const mediaItems = [
+    threadMedia[0] ?? { imageUrl, isImageSpoiler },
+    ...threadItems.map((_, index) => threadMedia[index + 1] ?? {}),
+  ];
+
+  function renderPreviewImage(media: ThreadsPostMedia, label: string) {
+    if (!media.imageUrl) {
+      return null;
+    }
+
+    return (
+      <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-white">
+        <div className="relative h-80 w-full">
+          <Image
+            className={`object-contain ${media.isImageSpoiler ? "blur-md" : ""}`}
+            src={media.imageUrl}
+            alt={`${label} 이미지 미리보기`}
+            fill
+            sizes="(max-width: 768px) 100vw, 720px"
+            unoptimized
+          />
+          {media.isImageSpoiler ? (
+            <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/40 text-white">
+              <span className="inline-flex items-center gap-2 rounded-md bg-zinc-950 px-3 py-2 text-sm font-semibold">
+                <EyeOff aria-hidden="true" className="h-4 w-4" />
+                스포일러 이미지
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="border-t border-zinc-200 pt-5">
@@ -91,28 +126,7 @@ export function PostPreview({
                 text={content}
               />
             </div>
-            {imageUrl ? (
-              <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-white">
-                <div className="relative h-80 w-full">
-                  <Image
-                    className={`object-contain ${isImageSpoiler ? "blur-md" : ""}`}
-                    src={imageUrl}
-                    alt="게시 이미지 미리보기"
-                    fill
-                    sizes="(max-width: 768px) 100vw, 720px"
-                    unoptimized
-                  />
-                  {isImageSpoiler ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/40 text-white">
-                      <span className="inline-flex items-center gap-2 rounded-md bg-zinc-950 px-3 py-2 text-sm font-semibold">
-                        <EyeOff aria-hidden="true" className="h-4 w-4" />
-                        스포일러 이미지
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
+            {renderPreviewImage(mediaItems[0] ?? {}, "1번 글")}
 
             {threadItems.length > 0 ? (
               <div className="mt-4 space-y-4 border-l border-zinc-200 pl-4">
@@ -128,6 +142,10 @@ export function PostPreview({
                         text={item}
                       />
                     </div>
+                    {renderPreviewImage(
+                      mediaItems[index + 1] ?? {},
+                      `${index + 2}번 글`,
+                    )}
                   </div>
                 ))}
               </div>

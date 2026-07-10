@@ -4,7 +4,7 @@ import { Clock3, RefreshCw } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { PublishErrorDetails } from "@/components/PublishErrorDetails";
-import type { PostHistoryEntry } from "@/lib/types";
+import type { PostHistoryEntry, ThreadsPostMedia } from "@/lib/types";
 
 const PLATFORM_LABEL: Record<string, string> = {
   x: "X",
@@ -16,6 +16,47 @@ function formatDateTime(value: string) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function getEntryMedia(entry: PostHistoryEntry, index: number): ThreadsPostMedia {
+  if (entry.threadMedia?.[index]) {
+    return entry.threadMedia[index];
+  }
+
+  if (index === 0) {
+    return {
+      imageUrl: entry.imageUrl,
+      isImageSpoiler: entry.isImageSpoiler,
+    };
+  }
+
+  return {};
+}
+
+function HistoryImage({ media }: { media: ThreadsPostMedia }) {
+  if (!media.imageUrl) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
+      <div className="relative h-48 w-full">
+        <Image
+          className={`object-contain ${media.isImageSpoiler ? "blur-md" : ""}`}
+          src={media.imageUrl}
+          alt="게시 기록 첨부 이미지"
+          fill
+          sizes="360px"
+          unoptimized
+        />
+        {media.isImageSpoiler ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/40 text-xs font-semibold text-white">
+            스포일러 이미지
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
@@ -133,6 +174,17 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
                   타래 {entry.threadItems.length + 1}개
                 </span>
               ) : null}
+              {entry.threadMedia?.some((media) => media.imageUrl) ||
+              entry.imageUrl ? (
+                <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
+                  이미지{" "}
+                  {[
+                    ...(entry.threadMedia ?? []),
+                    !entry.threadMedia ? { imageUrl: entry.imageUrl } : {},
+                  ].filter((media) => media.imageUrl).length}
+                  개
+                </span>
+              ) : null}
               {entry.spoilerRanges?.some((ranges) => ranges.length > 0) ? (
                 <span className="rounded-md bg-zinc-900 px-2 py-1 text-xs font-semibold text-white">
                   스포일러{" "}
@@ -152,38 +204,23 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
             <p className="mt-3 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800">
               {entry.content}
             </p>
+            <HistoryImage media={getEntryMedia(entry, 0)} />
             {entry.threadItems?.length ? (
               <div className="mt-3 space-y-2 border-l border-zinc-200 pl-3">
                 {entry.threadItems.map((item, index) => (
-                  <p
+                  <div
                     key={`${entry.id}-thread-${index}`}
-                    className="line-clamp-3 whitespace-pre-wrap break-words text-xs leading-5 text-zinc-600"
+                    className="text-xs leading-5 text-zinc-600"
                   >
-                    <span className="mr-1 font-semibold text-zinc-500">
-                      {index + 2}.
-                    </span>
-                    {item}
-                  </p>
+                    <p className="line-clamp-3 whitespace-pre-wrap break-words">
+                      <span className="mr-1 font-semibold text-zinc-500">
+                        {index + 2}.
+                      </span>
+                      {item || "이미지 게시"}
+                    </p>
+                    <HistoryImage media={getEntryMedia(entry, index + 1)} />
+                  </div>
                 ))}
-              </div>
-            ) : null}
-            {entry.imageUrl ? (
-              <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
-                <div className="relative h-48 w-full">
-                  <Image
-                    className={`object-contain ${entry.isImageSpoiler ? "blur-md" : ""}`}
-                    src={entry.imageUrl}
-                    alt="게시 기록 첨부 이미지"
-                    fill
-                    sizes="360px"
-                    unoptimized
-                  />
-                  {entry.isImageSpoiler ? (
-                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-950/40 text-xs font-semibold text-white">
-                      스포일러 이미지
-                    </div>
-                  ) : null}
-                </div>
               </div>
             ) : null}
             <dl className="mt-3 space-y-1 text-xs text-zinc-600">

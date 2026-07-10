@@ -9,6 +9,7 @@ import { createSpoilerTextEntities } from "@/lib/threadsSpoilers";
 import type {
   PublishErrorDetail,
   PublishResult,
+  ThreadsPostMedia,
   ThreadsSpoilerRange,
 } from "@/lib/types";
 
@@ -44,6 +45,7 @@ export async function publishToThreads(
   options: {
     imageUrl?: string;
     isImageSpoiler?: boolean;
+    mediaItems?: ThreadsPostMedia[];
     spoilerRanges?: ThreadsSpoilerRange[][];
     threadItems?: string[];
     topicTag?: string;
@@ -71,10 +73,19 @@ export async function publishToThreads(
     const { accessToken } = getThreadsCredentials();
     const publishedIds: string[] = [];
     const threadParts = [content, ...(options.threadItems ?? [])];
+    const legacyFirstMedia: ThreadsPostMedia = {
+      imageUrl: options.imageUrl,
+      isImageSpoiler: options.isImageSpoiler,
+    };
+    const mediaItems = threadParts.map((_, index) =>
+      options.mediaItems?.[index] ?? (index === 0 ? legacyFirstMedia : {}),
+    );
 
     for (let index = 0; index < threadParts.length; index += 1) {
+      const media = mediaItems[index];
       const isFirstPost = index === 0;
-      const isTextPost = !(isFirstPost && options.imageUrl);
+      const isImagePost = Boolean(media?.imageUrl);
+      const isTextPost = !isImagePost;
       const containerParams: Record<string, string> = {
         media_type: isTextPost ? "TEXT" : "IMAGE",
         text: threadParts[index],
@@ -85,11 +96,11 @@ export async function publishToThreads(
         containerParams.auto_publish_text = "true";
       }
 
-      if (isFirstPost && options.imageUrl) {
-        containerParams.image_url = options.imageUrl;
+      if (media?.imageUrl) {
+        containerParams.image_url = media.imageUrl;
       }
 
-      if (isFirstPost && options.imageUrl && options.isImageSpoiler) {
+      if (media?.imageUrl && media.isImageSpoiler) {
         containerParams.is_spoiler_media = "true";
       }
 
@@ -244,13 +255,14 @@ export async function publishToThreads(
     const postId = publishedIds[0];
     const itemLabel =
       threadParts.length > 1 ? `${threadParts.length} thread posts` : "post";
+    const imageLabel = mediaItems.some((media) => media.imageUrl) ? "media " : "";
 
     return {
       platform: "threads",
       success: true,
       message: postId
-        ? `Threads ${options.imageUrl ? "image " : ""}${itemLabel} published successfully. Post ID: ${postId}`
-        : `Threads ${options.imageUrl ? "image " : ""}${itemLabel} published successfully.`,
+        ? `Threads ${imageLabel}${itemLabel} published successfully. Post ID: ${postId}`
+        : `Threads ${imageLabel}${itemLabel} published successfully.`,
       postedAt,
       postId,
       threadPostIds: publishedIds,

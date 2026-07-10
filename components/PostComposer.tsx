@@ -704,12 +704,6 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
                 이미지 스포일러
               </label>
             ) : null}
-            <span className="inline-flex h-9 items-center rounded-full px-2 text-xs text-zinc-400">
-              GIF
-            </span>
-            <span className="inline-flex h-9 items-center rounded-full px-2 text-xs text-zinc-400">
-              옵션
-            </span>
           </div>
 
           {normalizeSpoilerRanges(text, spoilerRanges[partIndex] ?? []).length >
@@ -1054,9 +1048,6 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           <div className="mb-4 flex flex-col gap-3 border-b border-zinc-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-zinc-950">새로운 스레드</p>
-              <p className="text-xs leading-5 text-zinc-500">
-                글과 이미지를 블록별로 작성하고, 추가 글은 reply_to_id로 이어 붙입니다.
-              </p>
             </div>
             <span
               className={`inline-flex h-8 w-fit items-center rounded-full px-2.5 text-xs font-semibold ${

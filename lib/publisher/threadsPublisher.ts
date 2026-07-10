@@ -12,6 +12,16 @@ type ThreadsApiResponse = {
   id?: string;
 };
 
+function getPublishEndpoint(path: "threads" | "threads_publish") {
+  return `${THREADS_GRAPH_BASE_URL}/me/${path}`;
+}
+
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 export async function publishToThreads(
   content: string,
   options: {
@@ -35,17 +45,22 @@ export async function publishToThreads(
   }
 
   try {
-    const { userId, accessToken } = getThreadsCredentials();
+    const { accessToken } = getThreadsCredentials();
     const publishedIds: string[] = [];
     const threadParts = [content, ...(options.threadItems ?? [])];
 
     for (let index = 0; index < threadParts.length; index += 1) {
       const isFirstPost = index === 0;
+      const isTextPost = !(isFirstPost && options.imageUrl);
       const containerParams: Record<string, string> = {
-        media_type: isFirstPost && options.imageUrl ? "IMAGE" : "TEXT",
+        media_type: isTextPost ? "TEXT" : "IMAGE",
         text: threadParts[index],
         access_token: accessToken,
       };
+
+      if (isTextPost) {
+        containerParams.auto_publish_text = "true";
+      }
 
       if (isFirstPost && options.imageUrl) {
         containerParams.image_url = options.imageUrl;
@@ -85,7 +100,7 @@ export async function publishToThreads(
       }
 
       const containerResponse = await postThreadsForm<ThreadsApiResponse>(
-        `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(userId)}/threads`,
+        getPublishEndpoint("threads"),
         containerParams,
       );
 
@@ -93,7 +108,7 @@ export async function publishToThreads(
         return {
           platform: "threads",
           success: false,
-          message: `Threads thread item ${index + 1} failed: ${createThreadsErrorMessage(
+          message: `Threads thread item ${index + 1} container failed: ${createThreadsErrorMessage(
             containerResponse.status,
             containerResponse.body,
           )}`,
@@ -119,8 +134,18 @@ export async function publishToThreads(
         };
       }
 
+      if (isTextPost) {
+        publishedIds.push(creationId);
+
+        if (index < threadParts.length - 1) {
+          await sleep(1500);
+        }
+
+        continue;
+      }
+
       const publishResponse = await postThreadsForm<ThreadsApiResponse>(
-        `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(userId)}/threads_publish`,
+        getPublishEndpoint("threads_publish"),
         {
           creation_id: creationId,
           access_token: accessToken,
@@ -131,7 +156,7 @@ export async function publishToThreads(
         return {
           platform: "threads",
           success: false,
-          message: `Threads thread item ${index + 1} failed: ${createThreadsErrorMessage(
+          message: `Threads thread item ${index + 1} publish failed: ${createThreadsErrorMessage(
             publishResponse.status,
             publishResponse.body,
           )}`,
@@ -147,6 +172,10 @@ export async function publishToThreads(
 
       if (publishedPostId) {
         publishedIds.push(publishedPostId);
+      }
+
+      if (index < threadParts.length - 1) {
+        await sleep(1500);
       }
     }
 

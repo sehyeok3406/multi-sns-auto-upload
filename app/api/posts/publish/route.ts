@@ -13,10 +13,15 @@ import type {
   Platform,
   PublishResult,
   ThreadsPostMedia,
+  ThreadsPollAttachment,
   ThreadsSpoilerRange,
 } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const POLL_MIN_OPTIONS = 2;
+const POLL_MAX_OPTIONS = 4;
+const POLL_OPTION_CHARACTER_LIMIT = 25;
 
 function isPlatform(value: unknown): value is Platform {
   return value === "x" || value === "threads";
@@ -149,6 +154,80 @@ function parseThreadMedia(
   };
 }
 
+function countPollOptionCharacters(value: string) {
+  return Array.from(value).length;
+}
+
+function parsePollAttachment(value: unknown) {
+  if (value === undefined || value === null) {
+    return {
+      ok: true as const,
+      pollAttachment: undefined,
+    };
+  }
+
+  if (typeof value !== "object") {
+    return {
+      ok: false as const,
+      message: "설문 형식이 올바르지 않습니다.",
+    };
+  }
+
+  const input = value as Record<string, unknown>;
+  const rawOptions = [
+    input.option_a ?? input.optionA,
+    input.option_b ?? input.optionB,
+    input.option_c ?? input.optionC,
+    input.option_d ?? input.optionD,
+  ];
+  const options = rawOptions
+    .map((option) => (typeof option === "string" ? option.trim() : ""))
+    .filter(Boolean);
+
+  if (options.length < POLL_MIN_OPTIONS) {
+    return {
+      ok: false as const,
+      message: "설문은 선택지를 최소 2개 입력해야 합니다.",
+    };
+  }
+
+  if (options.length > POLL_MAX_OPTIONS) {
+    return {
+      ok: false as const,
+      message: "설문 선택지는 최대 4개까지 입력할 수 있습니다.",
+    };
+  }
+
+  const longOptionIndex = options.findIndex(
+    (option) => countPollOptionCharacters(option) > POLL_OPTION_CHARACTER_LIMIT,
+  );
+
+  if (longOptionIndex >= 0) {
+    return {
+      ok: false as const,
+      message: `설문 ${longOptionIndex + 1}번 선택지는 ${POLL_OPTION_CHARACTER_LIMIT}자를 초과할 수 없습니다.`,
+    };
+  }
+
+  const pollAttachment: ThreadsPollAttachment = {
+    option_a: options[0],
+    option_b: options[1],
+  };
+
+  if (options[2]) {
+    pollAttachment.option_c = options[2];
+  }
+
+  if (options[3]) {
+    pollAttachment.option_d = options[3];
+  }
+
+  return {
+    ok: true as const,
+    pollAttachment,
+  };
+}
+
 export async function POST(request: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json(
@@ -163,6 +242,7 @@ export async function POST(request: Request) {
     createdAt?: unknown;
     imageUrl?: unknown;
     isImageSpoiler?: unknown;
+    pollAttachment?: unknown;
     spoilerRanges?: unknown;
     threadMedia?: unknown;
     threadItems?: unknown;
@@ -198,6 +278,7 @@ export async function POST(request: Request) {
   const topicTagInput =
     typeof body.topicTag === "string" ? body.topicTag.trim() : "";
   const topicTagResult = validateTopicTag(topicTagInput);
+  const pollResult = parsePollAttachment(body.pollAttachment);
 
   if (!topicTagResult.ok) {
     return NextResponse.json(
@@ -206,7 +287,15 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!pollResult.ok) {
+    return NextResponse.json(
+      { message: pollResult.message },
+      { status: 400 },
+    );
+  }
+
   const topicTag = topicTagResult.value;
+  const pollAttachment = pollResult.pollAttachment;
 
   if (platforms.length === 0) {
     return NextResponse.json(
@@ -244,6 +333,7 @@ export async function POST(request: Request) {
 
   const threadMedia = threadMediaResult.mediaItems;
   const hasImageMedia = threadMedia.some((media) => media.imageUrl);
+  const hasPoll = Boolean(pollAttachment);
 
   if (!content && !threadMedia[0]?.imageUrl) {
     return NextResponse.json(
@@ -330,9 +420,23 @@ export async function POST(request: Request) {
   const spoilerRanges = spoilerRangesResult.ranges;
   const hasTextSpoiler = spoilerRanges.some((ranges) => ranges.length > 0);
 
-  if ((hasTextSpoiler || hasImageMedia) && !platforms.includes("threads")) {
+  if ((hasTextSpoiler || hasImageMedia || hasPoll) && !platforms.includes("threads")) {
     return NextResponse.json(
-      { message: "이미지와 스포일러는 Threads 게시에서만 사용할 수 있습니다." },
+      { message: "이미지, 스포일러, 설문은 Threads 게시에서만 사용할 수 있습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (hasPoll && hasImageMedia) {
+    return NextResponse.json(
+      { message: "설문은 이미지 첨부 게시와 함께 사용할 수 없습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (hasPoll && platforms.includes("x")) {
+    return NextResponse.json(
+      { message: "설문 게시를 하려면 X 선택을 해제해 주세요." },
       { status: 400 },
     );
   }
@@ -353,6 +457,7 @@ export async function POST(request: Request) {
             imageUrl: imageUrl || undefined,
             isImageSpoiler,
             mediaItems: threadMedia,
+            pollAttachment,
             spoilerRanges: hasTextSpoiler ? spoilerRanges : undefined,
             threadItems: threadItems.length > 0 ? threadItems : undefined,
             topicTag: topicTag || undefined,
@@ -368,6 +473,7 @@ export async function POST(request: Request) {
     imageUrl: imageUrl || undefined,
     isImageSpoiler: isImageSpoiler || undefined,
     threadMedia: hasImageMedia ? threadMedia : undefined,
+    pollAttachment,
     spoilerRanges: hasTextSpoiler ? spoilerRanges : undefined,
     threadItems: threadItems.length > 0 ? threadItems : undefined,
     topicTag: topicTag || undefined,

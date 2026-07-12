@@ -3,6 +3,7 @@
 import {
   EyeOff,
   ImageIcon,
+  ListChecks,
   Loader2,
   MessageSquareText,
   Pencil,
@@ -43,12 +44,16 @@ import type {
   Platform,
   PublishResult as PublishResultType,
   ThreadsPostMedia,
+  ThreadsPollAttachment,
   ThreadsSpoilerRange,
 } from "@/lib/types";
 
 const NO_AUTHOR_PRESET = "none";
 const MAX_IMAGE_SIZE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const POLL_MIN_OPTIONS = 2;
+const POLL_MAX_OPTIONS = 4;
+const POLL_OPTION_CHARACTER_LIMIT = 25;
 
 type CharacterLimitState = "normal" | "warning" | "error";
 
@@ -67,6 +72,55 @@ function createEmptyThreadMedia(): ThreadMediaState {
     imageUrl: "",
     isImageSpoiler: false,
     isUploading: false,
+  };
+}
+
+function createInitialPollOptions() {
+  return ["", ""];
+}
+
+function countPollOptionCharacters(value: string) {
+  return Array.from(value).length;
+}
+
+function buildPollAttachment(
+  enabled: boolean,
+  options: string[],
+):
+  | { ok: true; pollAttachment?: ThreadsPollAttachment }
+  | { ok: false; message: string } {
+  if (!enabled) {
+    return { ok: true };
+  }
+
+  const trimmedOptions = options.map((option) => option.trim()).filter(Boolean);
+
+  if (trimmedOptions.length < POLL_MIN_OPTIONS) {
+    return {
+      ok: false,
+      message: "설문은 선택지를 최소 2개 입력해야 합니다.",
+    };
+  }
+
+  const longOptionIndex = trimmedOptions.findIndex(
+    (option) => countPollOptionCharacters(option) > POLL_OPTION_CHARACTER_LIMIT,
+  );
+
+  if (longOptionIndex >= 0) {
+    return {
+      ok: false,
+      message: `설문 ${longOptionIndex + 1}번 선택지는 ${POLL_OPTION_CHARACTER_LIMIT}자를 초과할 수 없습니다.`,
+    };
+  }
+
+  return {
+    ok: true,
+    pollAttachment: {
+      option_a: trimmedOptions[0],
+      option_b: trimmedOptions[1],
+      ...(trimmedOptions[2] ? { option_c: trimmedOptions[2] } : {}),
+      ...(trimmedOptions[3] ? { option_d: trimmedOptions[3] } : {}),
+    },
   };
 }
 
@@ -105,6 +159,9 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [customTopicTag, setCustomTopicTag] = useState("");
   const [topicError, setTopicError] = useState("");
   const [spoilerError, setSpoilerError] = useState("");
+  const [pollError, setPollError] = useState("");
+  const [isPollEnabled, setIsPollEnabled] = useState(false);
+  const [pollOptions, setPollOptions] = useState(createInitialPollOptions);
   const [spoilerRanges, setSpoilerRanges] = useState<ThreadsSpoilerRange[][]>([
     [],
   ]);
@@ -133,6 +190,11 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   );
   const hasImageMedia = threadMedia.some((media) => media.imageUrl);
   const hasUploadingImage = threadMedia.some((media) => media.isUploading);
+  const previewPollAttachment = useMemo(() => {
+    const result = buildPollAttachment(isPollEnabled, pollOptions);
+
+    return result.ok ? result.pollAttachment : undefined;
+  }, [isPollEnabled, pollOptions]);
   const topicTag = useMemo(() => {
     if (selectedTopicTag === NO_TOPIC_TAG) {
       return "";
@@ -264,6 +326,47 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     }
   }
 
+  function togglePoll() {
+    setPollError("");
+
+    setIsPollEnabled((current) => {
+      const next = !current;
+
+      if (next) {
+        setPlatforms(["threads"]);
+      }
+
+      return next;
+    });
+  }
+
+  function updatePollOption(index: number, value: string) {
+    setPollError("");
+    setPollOptions((currentOptions) =>
+      currentOptions.map((option, optionIndex) =>
+        optionIndex === index ? value : option,
+      ),
+    );
+  }
+
+  function addPollOption() {
+    setPollError("");
+    setPollOptions((currentOptions) =>
+      currentOptions.length >= POLL_MAX_OPTIONS
+        ? currentOptions
+        : [...currentOptions, ""],
+    );
+  }
+
+  function removePollOption(index: number) {
+    setPollError("");
+    setPollOptions((currentOptions) =>
+      currentOptions.length <= POLL_MIN_OPTIONS
+        ? currentOptions
+        : currentOptions.filter((_, optionIndex) => optionIndex !== index),
+    );
+  }
+
   function getPostPartText(partIndex: number) {
     return partIndex === 0 ? content : threadItems[partIndex - 1] ?? "";
   }
@@ -375,6 +478,14 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     }
 
     updateThreadMedia(partIndex, { imageError: "" });
+
+    if (isPollEnabled) {
+      updateThreadMedia(partIndex, {
+        imageError: "설문 게시에는 이미지를 함께 첨부할 수 없습니다.",
+      });
+      event.target.value = "";
+      return;
+    }
 
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       updateThreadMedia(partIndex, {
@@ -616,6 +727,93 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
             }
           />
 
+          {isMainPost && isPollEnabled ? (
+            <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white text-teal-700">
+                    <ListChecks aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">설문</p>
+                    <p className="text-xs text-zinc-500">
+                      선택지 2~4개, 각 {POLL_OPTION_CHARACTER_LIMIT}자 이하
+                    </p>
+                  </div>
+                </div>
+                <button
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white hover:text-rose-700"
+                  type="button"
+                  onClick={togglePoll}
+                  title="설문 닫기"
+                >
+                  <X aria-hidden="true" className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {pollOptions.map((option, optionIndex) => {
+                  const optionLength = countPollOptionCharacters(option);
+                  const hasOptionError =
+                    optionLength > POLL_OPTION_CHARACTER_LIMIT;
+
+                  return (
+                    <div
+                      key={`poll-option-${optionIndex}`}
+                      className="flex items-center gap-2"
+                    >
+                      <input
+                        className={`h-10 min-w-0 flex-1 rounded-md border bg-white px-3 text-sm font-medium text-zinc-950 shadow-sm transition placeholder:text-zinc-400 focus:outline-none ${
+                          hasOptionError
+                            ? "border-rose-300 focus:border-rose-500"
+                            : "border-zinc-300 focus:border-teal-700"
+                        }`}
+                        value={option}
+                        onChange={(event) =>
+                          updatePollOption(optionIndex, event.target.value)
+                        }
+                        placeholder={`선택지 ${optionIndex + 1}`}
+                      />
+                      <span
+                        className={`w-12 text-right text-xs font-semibold ${
+                          hasOptionError ? "text-rose-700" : "text-zinc-400"
+                        }`}
+                      >
+                        {optionLength}/{POLL_OPTION_CHARACTER_LIMIT}
+                      </span>
+                      {pollOptions.length > POLL_MIN_OPTIONS ? (
+                        <button
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white hover:text-rose-700"
+                          type="button"
+                          onClick={() => removePollOption(optionIndex)}
+                          title="선택지 삭제"
+                        >
+                          <X aria-hidden="true" className="h-4 w-4" />
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                className="mt-3 inline-flex h-9 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-400 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:text-zinc-400"
+                type="button"
+                onClick={addPollOption}
+                disabled={pollOptions.length >= POLL_MAX_OPTIONS}
+              >
+                <Plus aria-hidden="true" className="h-4 w-4" />
+                선택지 추가
+              </button>
+
+              {pollError ? (
+                <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+                  {pollError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {media.imageUrl ? (
             <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
               <div className="relative h-64 w-full">
@@ -668,11 +866,15 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
               onChange={(event) => handleImageChange(event, partIndex)}
             />
             <button
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-zinc-100 hover:text-teal-700 disabled:text-zinc-300"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-zinc-100 hover:text-teal-700 disabled:cursor-not-allowed disabled:text-zinc-300"
               type="button"
               onClick={() => imageInputRefs.current[partIndex]?.click()}
-              disabled={media.isUploading}
-              title="이미지 첨부"
+              disabled={media.isUploading || isPollEnabled}
+              title={
+                isPollEnabled
+                  ? "설문 게시에는 이미지를 함께 첨부할 수 없습니다."
+                  : "이미지 첨부"
+              }
             >
               {media.isUploading ? (
                 <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
@@ -689,6 +891,26 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
               <EyeOff aria-hidden="true" className="h-4 w-4" />
               스포일러
             </button>
+            {isMainPost ? (
+              <button
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:text-zinc-300 ${
+                  isPollEnabled
+                    ? "bg-teal-50 text-teal-700 hover:bg-teal-100"
+                    : "hover:bg-zinc-100 hover:text-zinc-900"
+                }`}
+                type="button"
+                onClick={togglePoll}
+                disabled={!isPollEnabled && hasImageMedia}
+                title={
+                  !isPollEnabled && hasImageMedia
+                    ? "이미지를 해제한 뒤 설문을 추가할 수 있습니다."
+                    : "설문 만들기"
+                }
+              >
+                <ListChecks aria-hidden="true" className="h-4 w-4" />
+                설문
+              </button>
+            ) : null}
             {media.imageUrl ? (
               <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-full px-2 text-xs font-semibold transition hover:bg-zinc-100">
                 <input
@@ -753,6 +975,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     setError("");
     setTopicError("");
     setSpoilerError("");
+    setPollError("");
     setResults(null);
     const mainPost = trimTextWithSpoilerRanges(
       content,
@@ -763,6 +986,14 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       imageUrl: media.imageUrl || undefined,
       isImageSpoiler: media.isImageSpoiler || undefined,
     }));
+    const pollResult = buildPollAttachment(isPollEnabled, pollOptions);
+
+    if (!pollResult.ok) {
+      setPollError(pollResult.message);
+      return;
+    }
+
+    const pollAttachment = pollResult.pollAttachment;
 
     if (!mainPost.text && !mediaPayload[0]?.imageUrl) {
       setError("게시글 내용 또는 이미지를 입력해 주세요.");
@@ -827,6 +1058,21 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       return;
     }
 
+    if (pollAttachment && hasImageMedia) {
+      setError("설문은 이미지 첨부 게시와 함께 사용할 수 없습니다.");
+      return;
+    }
+
+    if (pollAttachment && !platforms.includes("threads")) {
+      setError("설문 게시는 현재 Threads만 지원합니다.");
+      return;
+    }
+
+    if (pollAttachment && platforms.includes("x")) {
+      setError("설문 게시를 하려면 X 선택을 해제해 주세요.");
+      return;
+    }
+
     if (hasImageMedia && !platforms.includes("threads")) {
       setError("이미지 첨부 게시는 현재 Threads만 지원합니다.");
       return;
@@ -849,6 +1095,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           createdAt,
           imageUrl: mediaPayload[0]?.imageUrl || undefined,
           isImageSpoiler: mediaPayload[0]?.isImageSpoiler || undefined,
+          pollAttachment,
           spoilerRanges: hasTextSpoiler ? publishSpoilerRanges : undefined,
           threadMedia: hasImageMedia ? mediaPayload : undefined,
           topicTag: topicTagResult.value || undefined,
@@ -878,6 +1125,9 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         setCustomTopicTag("");
         setTopicError("");
         setSpoilerError("");
+        setPollError("");
+        setIsPollEnabled(false);
+        setPollOptions(createInitialPollOptions());
         setSpoilerRanges([[]]);
         setThreadMedia([createEmptyThreadMedia()]);
         setCreatedAt(new Date().toISOString());
@@ -1160,6 +1410,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         <div className="mt-5">
           <PostPreview
             content={content}
+            pollAttachment={previewPollAttachment}
             spoilerRanges={spoilerRanges}
             threadMedia={threadMedia}
             threadItems={threadItems}

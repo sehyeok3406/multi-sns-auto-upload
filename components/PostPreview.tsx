@@ -4,7 +4,11 @@ import { Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
 import { normalizeSpoilerRanges } from "@/lib/threadsSpoilers";
-import type { ThreadsPostMedia, ThreadsSpoilerRange } from "@/lib/types";
+import type {
+  ThreadsPollAttachment,
+  ThreadsPostMedia,
+  ThreadsSpoilerRange,
+} from "@/lib/types";
 
 function PreviewText({
   emptyLabel,
@@ -46,10 +50,20 @@ function PreviewText({
   return <>{parts}</>;
 }
 
+function getPollOptions(pollAttachment: ThreadsPollAttachment) {
+  return [
+    pollAttachment.option_a,
+    pollAttachment.option_b,
+    pollAttachment.option_c,
+    pollAttachment.option_d,
+  ].filter(Boolean);
+}
+
 export function PostPreview({
   content,
   imageUrl,
   isImageSpoiler = false,
+  pollAttachment,
   spoilerRanges = [],
   threadMedia = [],
   threadItems = [],
@@ -58,6 +72,7 @@ export function PostPreview({
   content: string;
   imageUrl?: string;
   isImageSpoiler?: boolean;
+  pollAttachment?: ThreadsPollAttachment;
   spoilerRanges?: ThreadsSpoilerRange[][];
   threadMedia?: ThreadsPostMedia[];
   threadItems?: string[];
@@ -126,6 +141,21 @@ export function PostPreview({
                 text={content}
               />
             </div>
+            {pollAttachment ? (
+              <div className="mt-3 space-y-2 rounded-md border border-zinc-200 bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  설문
+                </p>
+                {getPollOptions(pollAttachment).map((option, index) => (
+                  <div
+                    key={`preview-poll-option-${index}`}
+                    className="rounded-md border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-800"
+                  >
+                    {option}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {renderPreviewImage(mediaItems[0] ?? {}, "1번 글")}
 
             {threadItems.length > 0 ? (

@@ -10,6 +10,7 @@ import type {
   PublishErrorDetail,
   PublishResult,
   ThreadsPostMedia,
+  ThreadsPollAttachment,
   ThreadsSpoilerRange,
 } from "@/lib/types";
 
@@ -46,6 +47,7 @@ export async function publishToThreads(
     imageUrl?: string;
     isImageSpoiler?: boolean;
     mediaItems?: ThreadsPostMedia[];
+    pollAttachment?: ThreadsPollAttachment;
     spoilerRanges?: ThreadsSpoilerRange[][];
     threadItems?: string[];
     topicTag?: string;
@@ -106,6 +108,10 @@ export async function publishToThreads(
 
       if (isFirstPost && options.topicTag) {
         containerParams.topic_tag = options.topicTag;
+      }
+
+      if (isFirstPost && options.pollAttachment) {
+        containerParams.poll_attachment = JSON.stringify(options.pollAttachment);
       }
 
       const spoilerEntities = createSpoilerTextEntities(
@@ -256,13 +262,14 @@ export async function publishToThreads(
     const itemLabel =
       threadParts.length > 1 ? `${threadParts.length} thread posts` : "post";
     const imageLabel = mediaItems.some((media) => media.imageUrl) ? "media " : "";
+    const pollLabel = options.pollAttachment ? "poll " : "";
 
     return {
       platform: "threads",
       success: true,
       message: postId
-        ? `Threads ${imageLabel}${itemLabel} published successfully. Post ID: ${postId}`
-        : `Threads ${imageLabel}${itemLabel} published successfully.`,
+        ? `Threads ${pollLabel}${imageLabel}${itemLabel} published successfully. Post ID: ${postId}`
+        : `Threads ${pollLabel}${imageLabel}${itemLabel} published successfully.`,
       postedAt,
       postId,
       threadPostIds: publishedIds,

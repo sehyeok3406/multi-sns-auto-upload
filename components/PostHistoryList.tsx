@@ -1,10 +1,14 @@
 "use client";
 
-import { Clock3, RefreshCw } from "lucide-react";
+import { Clock3, ListChecks, RefreshCw } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { PublishErrorDetails } from "@/components/PublishErrorDetails";
-import type { PostHistoryEntry, ThreadsPostMedia } from "@/lib/types";
+import type {
+  PostHistoryEntry,
+  ThreadsPollAttachment,
+  ThreadsPostMedia,
+} from "@/lib/types";
 
 const PLATFORM_LABEL: Record<string, string> = {
   x: "X",
@@ -31,6 +35,15 @@ function getEntryMedia(entry: PostHistoryEntry, index: number): ThreadsPostMedia
   }
 
   return {};
+}
+
+function getPollOptions(pollAttachment: ThreadsPollAttachment) {
+  return [
+    pollAttachment.option_a,
+    pollAttachment.option_b,
+    pollAttachment.option_c,
+    pollAttachment.option_d,
+  ].filter(Boolean);
 }
 
 function HistoryImage({ media }: { media: ThreadsPostMedia }) {
@@ -174,6 +187,11 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
                   타래 {entry.threadItems.length + 1}개
                 </span>
               ) : null}
+              {entry.pollAttachment ? (
+                <span className="rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-700">
+                  선택지 {getPollOptions(entry.pollAttachment).length}개
+                </span>
+              ) : null}
               {entry.threadMedia?.some((media) => media.imageUrl) ||
               entry.imageUrl ? (
                 <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600">
@@ -204,6 +222,24 @@ export function PostHistoryList({ refreshToken }: { refreshToken: number }) {
             <p className="mt-3 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800">
               {entry.content}
             </p>
+            {entry.pollAttachment ? (
+              <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  <ListChecks aria-hidden="true" className="h-4 w-4 text-teal-700" />
+                  설문
+                </div>
+                <div className="space-y-1.5">
+                  {getPollOptions(entry.pollAttachment).map((option, index) => (
+                    <div
+                      key={`${entry.id}-poll-${index}`}
+                      className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-700"
+                    >
+                      {option}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <HistoryImage media={getEntryMedia(entry, 0)} />
             {entry.threadItems?.length ? (
               <div className="mt-3 space-y-2 border-l border-zinc-200 pl-3">

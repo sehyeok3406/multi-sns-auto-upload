@@ -53,6 +53,13 @@ export type ThreadsPostMedia = {
   isImageSpoiler?: boolean;
 };
 
+export type ThreadsPollAttachment = {
+  option_a: string;
+  option_b: string;
+  option_c?: string;
+  option_d?: string;
+};
+
 export type PostHistoryEntry = {
   id: string;
   content: string;
@@ -61,6 +68,7 @@ export type PostHistoryEntry = {
   imageUrl?: string;
   isImageSpoiler?: boolean;
   threadMedia?: ThreadsPostMedia[];
+  pollAttachment?: ThreadsPollAttachment;
   topicTag?: string;
   spoilerRanges?: ThreadsSpoilerRange[][];
   results: PublishResult[];

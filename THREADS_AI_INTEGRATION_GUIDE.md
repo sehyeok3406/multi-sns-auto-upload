@@ -54,6 +54,12 @@ Cookie: auth=true
   "content": "첫 번째 글입니다.",
   "platforms": ["threads"],
   "topicTag": "AI Threads",
+  "pollAttachment": {
+    "option_a": "첫 번째 선택지",
+    "option_b": "두 번째 선택지",
+    "option_c": "세 번째 선택지",
+    "option_d": "네 번째 선택지"
+  },
   "threadItems": [
     "두 번째 타래 글입니다.",
     "세 번째 타래 글입니다."
@@ -99,6 +105,29 @@ X는 제외합니다.
 Threads Topic Tag입니다.
 
 선택값이며 게시글당 1개만 사용합니다.
+
+### `pollAttachment`
+
+Threads 설문 선택지입니다.
+
+선택값이며 1번 글에 붙습니다.
+
+선택지는 최소 2개, 최대 4개입니다.
+
+각 선택지는 25자 이하입니다.
+
+설문은 텍스트 게시 전용이므로 이미지 첨부와 함께 사용하지 않습니다.
+
+필드:
+
+- `option_a`
+- `option_b`
+- `option_c`
+- `option_d`
+
+`option_a`, `option_b`는 필수입니다.
+
+`option_c`, `option_d`는 선택입니다.
 
 ### `threadItems`
 
@@ -182,6 +211,7 @@ file=<이미지 파일>
 - 타래 작성
 - 추가 글을 `reply_to_id`로 이어 붙이기
 - Topic Tag 게시
+- 설문 게시
 - Threads 500자 제한
 - 450자 이상 경고
 - 500자 초과 게시 차단
@@ -249,6 +279,7 @@ BLOB_WEBHOOK_PUBLIC_KEY=
    - `text`
    - `image_url`
    - `topic_tag`
+   - `poll_attachment`
    - `reply_to_id`
    - `text_entities`
    - `is_spoiler_media`

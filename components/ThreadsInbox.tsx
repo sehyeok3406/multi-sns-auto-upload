@@ -3,14 +3,18 @@
 import {
   CornerDownRight,
   ExternalLink,
+  Heart,
   Inbox,
   Loader2,
   MessageCircle,
   RefreshCw,
+  Repeat2,
   Send,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
+  ThreadsInsightValues,
+  ThreadsInsightsSummary,
   ThreadsMediaSummary,
   ThreadsReply,
   ThreadsReplyPublishResult,
@@ -37,35 +41,83 @@ function shortId(value: string) {
   return value.length > 10 ? `${value.slice(0, 10)}...` : value;
 }
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("ko-KR").format(value);
+}
+
 function getPreviewText(value?: string) {
   const text = value?.trim();
 
   return text || "텍스트 없는 게시물";
 }
 
-type ReplyTarget = {
-  id: string;
-  label: string;
-};
+type PostInsightPreview = Pick<ThreadsInsightValues, "likes" | "replies" | "reposts">;
 
 export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
   const [posts, setPosts] = useState<ThreadsMediaSummary[]>([]);
   const [selectedPostId, setSelectedPostId] = useState("");
   const [replies, setReplies] = useState<ThreadsReply[]>([]);
-  const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
-  const [replyContent, setReplyContent] = useState("");
+  const [postInsightMap, setPostInsightMap] = useState<Record<string, PostInsightPreview>>({});
+  const [isLoadingPostInsights, setIsLoadingPostInsights] = useState(false);
+  const [postInsightError, setPostInsightError] = useState("");
+  const [rootReplyContent, setRootReplyContent] = useState("");
+  const [activeReplyId, setActiveReplyId] = useState("");
+  const [inlineReplyContent, setInlineReplyContent] = useState("");
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
   const [isLoadingReplies, setIsLoadingReplies] = useState(false);
-  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+  const [submittingReplyTargetId, setSubmittingReplyTargetId] = useState("");
   const [postError, setPostError] = useState("");
   const [replyError, setReplyError] = useState("");
-  const [replyResult, setReplyResult] =
+  const [rootReplyError, setRootReplyError] = useState("");
+  const [inlineReplyError, setInlineReplyError] = useState("");
+  const [rootReplyResult, setRootReplyResult] =
+    useState<ThreadsReplyPublishResult | null>(null);
+  const [inlineReplyResult, setInlineReplyResult] =
     useState<ThreadsReplyPublishResult | null>(null);
 
   const selectedPost = useMemo(
     () => posts.find((post) => post.id === selectedPostId) ?? null,
     [posts, selectedPostId],
   );
+
+  const loadPostInsights = useCallback(async (limit: number) => {
+    setIsLoadingPostInsights(true);
+    setPostInsightError("");
+
+    try {
+      const response = await fetch(`/api/threads/insights?limit=${limit}`, {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as ThreadsInsightsSummary & {
+        message?: string;
+      };
+
+      if (!response.ok) {
+        setPostInsightMap({});
+        setPostInsightError(
+          data.message ?? "Threads 게시 성과를 불러오지 못했습니다.",
+        );
+        return;
+      }
+
+      const nextInsightMap: Record<string, PostInsightPreview> = {};
+
+      for (const insight of data.posts ?? []) {
+        nextInsightMap[insight.post.id] = {
+          likes: insight.metrics.likes,
+          replies: insight.metrics.replies,
+          reposts: insight.metrics.reposts,
+        };
+      }
+
+      setPostInsightMap(nextInsightMap);
+    } catch {
+      setPostInsightMap({});
+      setPostInsightError("Threads 게시 성과 요청 중 문제가 발생했습니다.");
+    } finally {
+      setIsLoadingPostInsights(false);
+    }
+  }, []);
 
   const loadPosts = useCallback(async () => {
     setIsLoadingPosts(true);
@@ -84,15 +136,17 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
         setPostError(data.message ?? "Threads 게시물을 불러오지 못했습니다.");
         setPosts([]);
         setSelectedPostId("");
-        setReplyTarget(null);
+        setPostInsightMap({});
         setReplies([]);
         return;
       }
 
       const nextPosts = data.posts ?? [];
       setPosts(nextPosts);
+      void loadPostInsights(Math.max(nextPosts.length, 1));
       if (nextPosts.length === 0) {
         setReplies([]);
+        setPostInsightMap({});
       }
 
       setSelectedPostId((currentSelectedPostId) => {
@@ -103,28 +157,18 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
           ? currentSelectedPostId
           : nextPosts[0]?.id ?? "";
 
-        const nextSelectedPost = nextPosts.find(
-          (post) => post.id === nextSelectedPostId,
-        );
-
-        setReplyTarget(
-          nextSelectedPost
-            ? { id: nextSelectedPost.id, label: "선택한 원글" }
-            : null,
-        );
-
         return nextSelectedPostId;
       });
     } catch {
       setPostError("Threads 게시물 요청 중 문제가 발생했습니다.");
       setPosts([]);
       setSelectedPostId("");
-      setReplyTarget(null);
+      setPostInsightMap({});
       setReplies([]);
     } finally {
       setIsLoadingPosts(false);
     }
-  }, []);
+  }, [loadPostInsights]);
 
   const loadReplies = useCallback(async (postId = selectedPostId) => {
     if (!postId) {
@@ -161,37 +205,53 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
 
   function selectPost(post: ThreadsMediaSummary) {
     setSelectedPostId(post.id);
-    setReplyTarget({ id: post.id, label: "선택한 원글" });
-    setReplyContent("");
-    setReplyResult(null);
+    setRootReplyContent("");
+    setActiveReplyId("");
+    setInlineReplyContent("");
+    setRootReplyResult(null);
+    setInlineReplyResult(null);
+    setRootReplyError("");
+    setInlineReplyError("");
     setReplyError("");
   }
 
-  async function handleReplySubmit() {
-    const content = replyContent.trim();
+  async function submitReply({
+    content,
+    onSuccess,
+    replyToId,
+    setError,
+    setResult,
+  }: {
+    content: string;
+    onSuccess: () => void;
+    replyToId: string;
+    setError: (message: string) => void;
+    setResult: (result: ThreadsReplyPublishResult | null) => void;
+  }) {
+    const trimmedContent = content.trim();
 
-    setReplyError("");
-    setReplyResult(null);
+    setError("");
+    setResult(null);
 
-    if (!replyTarget) {
-      setReplyError("답글을 달 게시물 또는 댓글을 선택해 주세요.");
+    if (!replyToId) {
+      setError("답글을 달 게시물 또는 댓글을 선택해 주세요.");
       return;
     }
 
-    if (!content) {
-      setReplyError("답글 내용을 입력해 주세요.");
+    if (!trimmedContent) {
+      setError("답글 내용을 입력해 주세요.");
       return;
     }
 
-    setIsSubmittingReply(true);
+    setSubmittingReplyTargetId(replyToId);
 
     try {
       const response = await fetch("/api/threads/replies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          replyToId: replyTarget.id,
-          content,
+          replyToId,
+          content: trimmedContent,
         }),
       });
       const data = (await response.json()) as {
@@ -200,7 +260,7 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
       const result = data.result;
 
       if (!response.ok || !result?.success) {
-        setReplyResult(
+        setResult(
           result ?? {
             success: false,
             message: "Threads 답글 게시에 실패했습니다.",
@@ -210,18 +270,45 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
         return;
       }
 
-      setReplyResult(result);
-      setReplyContent("");
+      setResult(result);
+      onSuccess();
       await loadReplies();
     } catch {
-      setReplyResult({
+      setResult({
         success: false,
         message: "Threads 답글 게시 중 문제가 발생했습니다.",
         postedAt: new Date().toISOString(),
       });
     } finally {
-      setIsSubmittingReply(false);
+      setSubmittingReplyTargetId("");
     }
+  }
+
+  async function handleRootReplySubmit() {
+    if (!selectedPost) {
+      setRootReplyError("답글을 달 원글을 먼저 선택해 주세요.");
+      return;
+    }
+
+    await submitReply({
+      content: rootReplyContent,
+      onSuccess: () => setRootReplyContent(""),
+      replyToId: selectedPost.id,
+      setError: setRootReplyError,
+      setResult: setRootReplyResult,
+    });
+  }
+
+  async function handleInlineReplySubmit(reply: ThreadsReply) {
+    await submitReply({
+      content: inlineReplyContent,
+      onSuccess: () => {
+        setInlineReplyContent("");
+      },
+      replyToId: reply.id,
+      setError: setInlineReplyError,
+      setResult: setInlineReplyResult,
+    });
   }
 
   useEffect(() => {
@@ -287,6 +374,11 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
               {postError}
             </p>
           ) : null}
+          {postInsightError && !postError ? (
+            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+              인사이트 표시 실패: {postInsightError}
+            </p>
+          ) : null}
 
           <div className="mt-3 space-y-2">
             {posts.length === 0 && isLoadingPosts ? (
@@ -310,6 +402,7 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
 
             {posts.map((post) => {
               const isSelected = post.id === selectedPostId;
+              const insight = postInsightMap[post.id];
 
               return (
                 <button
@@ -337,6 +430,44 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                     ID {shortId(post.id)}
                     {post.mediaType ? ` · ${post.mediaType}` : ""}
                   </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs font-semibold text-zinc-500">
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title="좋아요"
+                    >
+                      <Heart aria-hidden="true" className="h-3.5 w-3.5" />
+                      {insight
+                        ? formatNumber(insight.likes)
+                        : isLoadingPostInsights
+                          ? "-"
+                          : "0"}
+                    </span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title="댓글"
+                    >
+                      <MessageCircle
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5"
+                      />
+                      {insight
+                        ? formatNumber(insight.replies)
+                        : isLoadingPostInsights
+                          ? "-"
+                          : "0"}
+                    </span>
+                    <span
+                      className="inline-flex items-center gap-1"
+                      title="리포스트"
+                    >
+                      <Repeat2 aria-hidden="true" className="h-3.5 w-3.5" />
+                      {insight
+                        ? formatNumber(insight.reposts)
+                        : isLoadingPostInsights
+                          ? "-"
+                          : "0"}
+                    </span>
+                  </div>
                 </button>
               );
             })}
@@ -402,49 +533,36 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                     </span>
                     <div>
                       <p className="text-sm font-semibold text-zinc-900">
-                        대화 및 답글
+                        원글에 답글
                       </p>
                       <p className="text-xs text-zinc-500">
-                        답글 대상: {replyTarget?.label ?? "선택 없음"}
+                        선택한 원글에 바로 답글을 남깁니다.
                       </p>
                     </div>
                   </div>
-                  <button
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-teal-700 bg-white px-3 text-sm font-semibold text-teal-800 shadow-sm transition hover:bg-teal-50"
-                    type="button"
-                    onClick={() =>
-                      setReplyTarget({
-                        id: selectedPost.id,
-                        label: "선택한 원글",
-                      })
-                    }
-                  >
-                    <CornerDownRight aria-hidden="true" className="h-4 w-4" />
-                    원글에 답글
-                  </button>
                 </div>
 
                 <label className="mt-3 block">
                   <span className="sr-only">답글 내용</span>
                   <textarea
                     className="min-h-28 w-full resize-y rounded-md border border-zinc-300 bg-white p-3 text-sm leading-6 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-teal-700"
-                    value={replyContent}
-                    onChange={(event) => setReplyContent(event.target.value)}
-                    placeholder="선택한 원글 또는 댓글에 남길 답글을 작성하세요."
-                    disabled={isSubmittingReply}
+                    value={rootReplyContent}
+                    onChange={(event) => setRootReplyContent(event.target.value)}
+                    placeholder="선택한 원글에 남길 답글을 작성하세요."
+                    disabled={submittingReplyTargetId === selectedPost.id}
                   />
                 </label>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs font-medium text-zinc-500">
-                    {replyContent.length.toLocaleString("ko-KR")}자
+                    {rootReplyContent.length.toLocaleString("ko-KR")}자
                   </p>
                   <button
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:bg-zinc-400"
                     type="button"
-                    onClick={handleReplySubmit}
-                    disabled={isSubmittingReply}
+                    onClick={handleRootReplySubmit}
+                    disabled={submittingReplyTargetId === selectedPost.id}
                   >
-                    {isSubmittingReply ? (
+                    {submittingReplyTargetId === selectedPost.id ? (
                       <Loader2
                         aria-hidden="true"
                         className="h-4 w-4 animate-spin"
@@ -452,32 +570,34 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                     ) : (
                       <Send aria-hidden="true" className="h-4 w-4" />
                     )}
-                    {isSubmittingReply ? "답글 게시 중" : "답글 게시"}
+                    {submittingReplyTargetId === selectedPost.id
+                      ? "답글 게시 중"
+                      : "원글에 답글 게시"}
                   </button>
                 </div>
 
-                {replyError ? (
+                {rootReplyError ? (
                   <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
-                    {replyError}
+                    {rootReplyError}
                   </p>
                 ) : null}
 
-                {replyResult ? (
+                {rootReplyResult ? (
                   <p
                     className={`mt-3 rounded-md border px-3 py-2.5 text-sm font-medium ${
-                      replyResult.success
+                      rootReplyResult.success
                         ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                         : "border-rose-200 bg-rose-50 text-rose-700"
                     }`}
                   >
-                    {replyResult.success ? "성공" : "실패"} -{" "}
-                    {replyResult.message}
-                    {replyResult.postUrl ? (
+                    {rootReplyResult.success ? "성공" : "실패"} -{" "}
+                    {rootReplyResult.message}
+                    {rootReplyResult.postUrl ? (
                       <>
                         {" "}
                         <a
                           className="underline underline-offset-2"
-                          href={replyResult.postUrl}
+                          href={rootReplyResult.postUrl}
                           target="_blank"
                           rel="noreferrer"
                         >
@@ -498,6 +618,12 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                     {replies.length.toLocaleString("ko-KR")}개
                   </span>
                 </div>
+
+                {replyError ? (
+                  <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+                    {replyError}
+                  </p>
+                ) : null}
 
                 {replyError ? null : (
                   <div className="mt-3 space-y-2">
@@ -520,11 +646,16 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                       </div>
                     ) : null}
 
-                    {replies.map((reply) => (
-                      <article
-                        key={reply.id}
-                        className="rounded-md border border-zinc-200 bg-white p-3"
-                      >
+                    {replies.map((reply) => {
+                      const isInlineReplyOpen = activeReplyId === reply.id;
+                      const isSubmittingThisReply =
+                        submittingReplyTargetId === reply.id;
+
+                      return (
+                        <article
+                          key={reply.id}
+                          className="rounded-md border border-zinc-200 bg-white p-3"
+                        >
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <p className="text-sm font-semibold text-zinc-950">
@@ -550,20 +681,26 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                               </a>
                             ) : null}
                             <button
-                              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-teal-700 bg-white px-2.5 text-xs font-semibold text-teal-800 shadow-sm transition hover:bg-teal-50"
+                              className={`inline-flex h-8 items-center justify-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold shadow-sm transition ${
+                                isInlineReplyOpen
+                                  ? "border-zinc-300 bg-zinc-100 text-zinc-700 hover:bg-zinc-50"
+                                  : "border-teal-700 bg-white text-teal-800 hover:bg-teal-50"
+                              }`}
                               type="button"
-                              onClick={() =>
-                                setReplyTarget({
-                                  id: reply.id,
-                                  label: `@${reply.username ?? "threads"} 댓글`,
-                                })
-                              }
+                              onClick={() => {
+                                setInlineReplyError("");
+                                setInlineReplyResult(null);
+                                setInlineReplyContent("");
+                                setActiveReplyId((currentReplyId) =>
+                                  currentReplyId === reply.id ? "" : reply.id,
+                                );
+                              }}
                             >
                               <CornerDownRight
                                 aria-hidden="true"
                                 className="h-3.5 w-3.5"
                               />
-                              이 댓글에 답글
+                              {isInlineReplyOpen ? "답글 닫기" : "이 댓글에 답글"}
                             </button>
                           </div>
                         </div>
@@ -574,8 +711,85 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                           ID {shortId(reply.id)}
                           {reply.mediaType ? ` · ${reply.mediaType}` : ""}
                         </p>
-                      </article>
-                    ))}
+                        {isInlineReplyOpen ? (
+                          <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+                            <label className="block">
+                              <span className="sr-only">
+                                이 댓글에 남길 답글
+                              </span>
+                              <textarea
+                                className="min-h-24 w-full resize-y rounded-md border border-zinc-300 bg-white p-3 text-sm leading-6 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 hover:border-zinc-400 focus:border-teal-700"
+                                value={inlineReplyContent}
+                                onChange={(event) =>
+                                  setInlineReplyContent(event.target.value)
+                                }
+                                placeholder={`@${reply.username ?? "threads"} 댓글에 답글을 작성하세요.`}
+                                disabled={isSubmittingThisReply}
+                              />
+                            </label>
+                            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-xs font-medium text-zinc-500">
+                                {inlineReplyContent.length.toLocaleString(
+                                  "ko-KR",
+                                )}
+                                자
+                              </p>
+                              <button
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:bg-zinc-400"
+                                type="button"
+                                onClick={() => handleInlineReplySubmit(reply)}
+                                disabled={isSubmittingThisReply}
+                              >
+                                {isSubmittingThisReply ? (
+                                  <Loader2
+                                    aria-hidden="true"
+                                    className="h-4 w-4 animate-spin"
+                                  />
+                                ) : (
+                                  <Send aria-hidden="true" className="h-4 w-4" />
+                                )}
+                                {isSubmittingThisReply
+                                  ? "답글 게시 중"
+                                  : "이 댓글에 답글 게시"}
+                              </button>
+                            </div>
+
+                            {inlineReplyError ? (
+                              <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+                                {inlineReplyError}
+                              </p>
+                            ) : null}
+
+                            {inlineReplyResult ? (
+                              <p
+                                className={`mt-3 rounded-md border px-3 py-2 text-sm font-medium ${
+                                  inlineReplyResult.success
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-rose-200 bg-rose-50 text-rose-700"
+                                }`}
+                              >
+                                {inlineReplyResult.success ? "성공" : "실패"} -{" "}
+                                {inlineReplyResult.message}
+                                {inlineReplyResult.postUrl ? (
+                                  <>
+                                    {" "}
+                                    <a
+                                      className="underline underline-offset-2"
+                                      href={inlineReplyResult.postUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      보기
+                                    </a>
+                                  </>
+                                ) : null}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        </article>
+                      );
+                    })}
                   </div>
                 )}
               </div>

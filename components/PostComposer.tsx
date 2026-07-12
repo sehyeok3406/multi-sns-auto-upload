@@ -1044,53 +1044,6 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           ) : null}
           </div>
 
-        <div className="mt-5 rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="mb-4 flex flex-col gap-3 border-b border-zinc-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-zinc-950">새로운 스레드</p>
-            </div>
-            <span
-              className={`inline-flex h-8 w-fit items-center rounded-full px-2.5 text-xs font-semibold ${
-                characterLimitState === "error"
-                  ? "bg-rose-50 text-rose-700"
-                  : characterLimitState === "warning"
-                    ? "bg-amber-50 text-amber-700"
-                    : "bg-zinc-100 text-zinc-600"
-              }`}
-            >
-              1번 글 {characterCount.toLocaleString("ko-KR")} /{" "}
-              {THREADS_TEXT_LIMIT}
-            </span>
-          </div>
-
-          <div className="space-y-1">
-            {[content, ...threadItems].map((_, partIndex) =>
-              renderComposerBlock(partIndex),
-            )}
-          </div>
-
-          <div className="mt-1 grid grid-cols-[40px_minmax(0,1fr)] gap-3">
-            <div className="flex justify-center">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-950 text-[10px] font-semibold text-white">
-                S
-              </span>
-            </div>
-            <button
-              className="w-fit rounded-full px-1 py-1 text-left text-sm font-semibold text-zinc-400 transition hover:text-teal-700"
-              type="button"
-              onClick={addThreadItem}
-            >
-              스레드에 추가
-            </button>
-          </div>
-        </div>
-
-        {spoilerError ? (
-          <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
-            {spoilerError}
-          </p>
-        ) : null}
-
         <div className="mt-5 rounded-md border border-zinc-200 bg-zinc-50 p-3">
           <div className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-md bg-white text-teal-700">
@@ -1151,6 +1104,53 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
             </p>
           ) : null}
         </div>
+
+        <div className="mt-5 rounded-lg border border-zinc-200 bg-white p-4">
+          <div className="mb-4 flex flex-col gap-3 border-b border-zinc-200 pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-zinc-950">새로운 스레드</p>
+            </div>
+            <span
+              className={`inline-flex h-8 w-fit items-center rounded-full px-2.5 text-xs font-semibold ${
+                characterLimitState === "error"
+                  ? "bg-rose-50 text-rose-700"
+                  : characterLimitState === "warning"
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-zinc-100 text-zinc-600"
+              }`}
+            >
+              1번 글 {characterCount.toLocaleString("ko-KR")} /{" "}
+              {THREADS_TEXT_LIMIT}
+            </span>
+          </div>
+
+          <div className="space-y-1">
+            {[content, ...threadItems].map((_, partIndex) =>
+              renderComposerBlock(partIndex),
+            )}
+          </div>
+
+          <div className="mt-1 grid grid-cols-[40px_minmax(0,1fr)] gap-3">
+            <div className="flex justify-center">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-zinc-950 text-[10px] font-semibold text-white">
+                S
+              </span>
+            </div>
+            <button
+              className="w-fit rounded-full px-1 py-1 text-left text-sm font-semibold text-zinc-400 transition hover:text-teal-700"
+              type="button"
+              onClick={addThreadItem}
+            >
+              스레드에 추가
+            </button>
+          </div>
+        </div>
+
+        {spoilerError ? (
+          <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+            {spoilerError}
+          </p>
+        ) : null}
 
         <div className="mt-5 space-y-3">
           <p className="text-sm font-semibold text-zinc-800">업로드 대상</p>

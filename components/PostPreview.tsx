@@ -8,6 +8,7 @@ import type {
   ThreadsPollAttachment,
   ThreadsPostMedia,
   ThreadsSpoilerRange,
+  ThreadsTextAttachment,
 } from "@/lib/types";
 
 function PreviewText({
@@ -65,6 +66,7 @@ export function PostPreview({
   isImageSpoiler = false,
   pollAttachment,
   spoilerRanges = [],
+  textAttachment,
   threadMedia = [],
   threadItems = [],
   topicTag,
@@ -74,6 +76,7 @@ export function PostPreview({
   isImageSpoiler?: boolean;
   pollAttachment?: ThreadsPollAttachment;
   spoilerRanges?: ThreadsSpoilerRange[][];
+  textAttachment?: ThreadsTextAttachment;
   threadMedia?: ThreadsPostMedia[];
   threadItems?: string[];
   topicTag?: string;
@@ -154,6 +157,29 @@ export function PostPreview({
                     {option}
                   </div>
                 ))}
+              </div>
+            ) : null}
+            {textAttachment ? (
+              <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                    텍스트 첨부
+                  </p>
+                  <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-500">
+                    {Array.from(textAttachment.plaintext).length.toLocaleString(
+                      "ko-KR",
+                    )}
+                    자
+                  </span>
+                </div>
+                <p className="max-h-40 overflow-hidden whitespace-pre-wrap break-words text-sm leading-6 text-zinc-800">
+                  {textAttachment.plaintext}
+                </p>
+                {textAttachment.link_attachment_url ? (
+                  <p className="mt-3 truncate text-xs font-semibold text-teal-700">
+                    {textAttachment.link_attachment_url}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             {renderPreviewImage(mediaItems[0] ?? {}, "1번 글")}

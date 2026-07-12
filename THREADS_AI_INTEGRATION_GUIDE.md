@@ -60,6 +60,10 @@ Cookie: auth=true
     "option_c": "세 번째 선택지",
     "option_d": "네 번째 선택지"
   },
+  "textAttachment": {
+    "plaintext": "긴 글 첨부 내용입니다.",
+    "link_attachment_url": "https://example.com"
+  },
   "threadItems": [
     "두 번째 타래 글입니다.",
     "세 번째 타래 글입니다."
@@ -128,6 +132,27 @@ Threads 설문 선택지입니다.
 `option_a`, `option_b`는 필수입니다.
 
 `option_c`, `option_d`는 선택입니다.
+
+### `textAttachment`
+
+Threads 텍스트 첨부입니다.
+
+선택값이며 1번 글에 붙습니다.
+
+긴 글 본문은 최대 10,000자입니다.
+
+선택적으로 링크 URL을 함께 넣을 수 있습니다.
+
+설문 및 이미지 첨부와 함께 사용하지 않습니다.
+
+필드:
+
+- `plaintext`
+- `link_attachment_url`
+
+`plaintext`는 필수입니다.
+
+`link_attachment_url`은 선택입니다.
 
 ### `threadItems`
 
@@ -212,6 +237,7 @@ file=<이미지 파일>
 - 추가 글을 `reply_to_id`로 이어 붙이기
 - Topic Tag 게시
 - 설문 게시
+- 텍스트 첨부 게시
 - Threads 500자 제한
 - 450자 이상 경고
 - 500자 초과 게시 차단
@@ -280,6 +306,7 @@ BLOB_WEBHOOK_PUBLIC_KEY=
    - `image_url`
    - `topic_tag`
    - `poll_attachment`
+   - `text_attachment`
    - `reply_to_id`
    - `text_entities`
    - `is_spoiler_media`

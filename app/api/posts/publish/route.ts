@@ -15,6 +15,7 @@ import type {
   ThreadsPostMedia,
   ThreadsPollAttachment,
   ThreadsSpoilerRange,
+  ThreadsTextAttachment,
 } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,7 @@ export const dynamic = "force-dynamic";
 const POLL_MIN_OPTIONS = 2;
 const POLL_MAX_OPTIONS = 4;
 const POLL_OPTION_CHARACTER_LIMIT = 25;
+const TEXT_ATTACHMENT_CHARACTER_LIMIT = 10000;
 
 function isPlatform(value: unknown): value is Platform {
   return value === "x" || value === "threads";
@@ -228,6 +230,74 @@ function parsePollAttachment(value: unknown) {
   };
 }
 
+function parseTextAttachment(value: unknown) {
+  if (value === undefined || value === null) {
+    return {
+      ok: true as const,
+      textAttachment: undefined,
+    };
+  }
+
+  if (typeof value !== "object") {
+    return {
+      ok: false as const,
+      message: "텍스트 첨부 형식이 올바르지 않습니다.",
+    };
+  }
+
+  const input = value as Record<string, unknown>;
+  const plaintext =
+    typeof input.plaintext === "string" ? input.plaintext.trim() : "";
+  const linkAttachmentUrl =
+    typeof input.link_attachment_url === "string"
+      ? input.link_attachment_url.trim()
+      : typeof input.linkAttachmentUrl === "string"
+        ? input.linkAttachmentUrl.trim()
+        : "";
+
+  if (!plaintext) {
+    return {
+      ok: false as const,
+      message: "텍스트 첨부 내용을 입력해 주세요.",
+    };
+  }
+
+  if (Array.from(plaintext).length > TEXT_ATTACHMENT_CHARACTER_LIMIT) {
+    return {
+      ok: false as const,
+      message: `텍스트 첨부는 ${TEXT_ATTACHMENT_CHARACTER_LIMIT.toLocaleString("ko-KR")}자를 초과할 수 없습니다.`,
+    };
+  }
+
+  if (linkAttachmentUrl) {
+    try {
+      const parsedUrl = new URL(linkAttachmentUrl);
+
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error("Invalid protocol");
+      }
+    } catch {
+      return {
+        ok: false as const,
+        message: "텍스트 첨부 링크 URL이 올바르지 않습니다.",
+      };
+    }
+  }
+
+  const textAttachment: ThreadsTextAttachment = {
+    plaintext,
+  };
+
+  if (linkAttachmentUrl) {
+    textAttachment.link_attachment_url = linkAttachmentUrl;
+  }
+
+  return {
+    ok: true as const,
+    textAttachment,
+  };
+}
+
 export async function POST(request: Request) {
   if (!(await isAuthenticated())) {
     return NextResponse.json(
@@ -244,6 +314,7 @@ export async function POST(request: Request) {
     isImageSpoiler?: unknown;
     pollAttachment?: unknown;
     spoilerRanges?: unknown;
+    textAttachment?: unknown;
     threadMedia?: unknown;
     threadItems?: unknown;
     topicTag?: unknown;
@@ -279,6 +350,7 @@ export async function POST(request: Request) {
     typeof body.topicTag === "string" ? body.topicTag.trim() : "";
   const topicTagResult = validateTopicTag(topicTagInput);
   const pollResult = parsePollAttachment(body.pollAttachment);
+  const textAttachmentResult = parseTextAttachment(body.textAttachment);
 
   if (!topicTagResult.ok) {
     return NextResponse.json(
@@ -294,8 +366,16 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!textAttachmentResult.ok) {
+    return NextResponse.json(
+      { message: textAttachmentResult.message },
+      { status: 400 },
+    );
+  }
+
   const topicTag = topicTagResult.value;
   const pollAttachment = pollResult.pollAttachment;
+  const textAttachment = textAttachmentResult.textAttachment;
 
   if (platforms.length === 0) {
     return NextResponse.json(
@@ -334,6 +414,7 @@ export async function POST(request: Request) {
   const threadMedia = threadMediaResult.mediaItems;
   const hasImageMedia = threadMedia.some((media) => media.imageUrl);
   const hasPoll = Boolean(pollAttachment);
+  const hasTextAttachment = Boolean(textAttachment);
 
   if (!content && !threadMedia[0]?.imageUrl) {
     return NextResponse.json(
@@ -420,9 +501,15 @@ export async function POST(request: Request) {
   const spoilerRanges = spoilerRangesResult.ranges;
   const hasTextSpoiler = spoilerRanges.some((ranges) => ranges.length > 0);
 
-  if ((hasTextSpoiler || hasImageMedia || hasPoll) && !platforms.includes("threads")) {
+  if (
+    (hasTextSpoiler || hasImageMedia || hasPoll || hasTextAttachment) &&
+    !platforms.includes("threads")
+  ) {
     return NextResponse.json(
-      { message: "이미지, 스포일러, 설문은 Threads 게시에서만 사용할 수 있습니다." },
+      {
+        message:
+          "이미지, 스포일러, 설문, 텍스트 첨부는 Threads 게시에서만 사용할 수 있습니다.",
+      },
       { status: 400 },
     );
   }
@@ -437,6 +524,27 @@ export async function POST(request: Request) {
   if (hasPoll && platforms.includes("x")) {
     return NextResponse.json(
       { message: "설문 게시를 하려면 X 선택을 해제해 주세요." },
+      { status: 400 },
+    );
+  }
+
+  if (hasTextAttachment && hasPoll) {
+    return NextResponse.json(
+      { message: "텍스트 첨부는 설문과 함께 사용할 수 없습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (hasTextAttachment && hasImageMedia) {
+    return NextResponse.json(
+      { message: "텍스트 첨부는 이미지 첨부 게시와 함께 사용할 수 없습니다." },
+      { status: 400 },
+    );
+  }
+
+  if (hasTextAttachment && platforms.includes("x")) {
+    return NextResponse.json(
+      { message: "텍스트 첨부 게시를 하려면 X 선택을 해제해 주세요." },
       { status: 400 },
     );
   }
@@ -459,6 +567,7 @@ export async function POST(request: Request) {
             mediaItems: threadMedia,
             pollAttachment,
             spoilerRanges: hasTextSpoiler ? spoilerRanges : undefined,
+            textAttachment,
             threadItems: threadItems.length > 0 ? threadItems : undefined,
             topicTag: topicTag || undefined,
           }),
@@ -474,6 +583,7 @@ export async function POST(request: Request) {
     isImageSpoiler: isImageSpoiler || undefined,
     threadMedia: hasImageMedia ? threadMedia : undefined,
     pollAttachment,
+    textAttachment,
     spoilerRanges: hasTextSpoiler ? spoilerRanges : undefined,
     threadItems: threadItems.length > 0 ? threadItems : undefined,
     topicTag: topicTag || undefined,

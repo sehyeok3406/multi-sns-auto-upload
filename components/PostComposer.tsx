@@ -2,8 +2,10 @@
 
 import {
   EyeOff,
+  FileText,
   ImageIcon,
   ListChecks,
+  Link,
   Loader2,
   MessageSquareText,
   Pencil,
@@ -46,6 +48,7 @@ import type {
   ThreadsPostMedia,
   ThreadsPollAttachment,
   ThreadsSpoilerRange,
+  ThreadsTextAttachment,
 } from "@/lib/types";
 
 const NO_AUTHOR_PRESET = "none";
@@ -54,6 +57,7 @@ const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const POLL_MIN_OPTIONS = 2;
 const POLL_MAX_OPTIONS = 4;
 const POLL_OPTION_CHARACTER_LIMIT = 25;
+const TEXT_ATTACHMENT_CHARACTER_LIMIT = 10000;
 
 type CharacterLimitState = "normal" | "warning" | "error";
 
@@ -124,6 +128,64 @@ function buildPollAttachment(
   };
 }
 
+function countTextAttachmentCharacters(value: string) {
+  return Array.from(value).length;
+}
+
+function buildTextAttachment(
+  enabled: boolean,
+  text: string,
+  linkUrl: string,
+):
+  | { ok: true; textAttachment?: ThreadsTextAttachment }
+  | { ok: false; message: string } {
+  if (!enabled) {
+    return { ok: true };
+  }
+
+  const plaintext = text.trim();
+  const linkAttachmentUrl = linkUrl.trim();
+
+  if (!plaintext) {
+    return {
+      ok: false,
+      message: "텍스트 첨부 내용을 입력해 주세요.",
+    };
+  }
+
+  if (countTextAttachmentCharacters(plaintext) > TEXT_ATTACHMENT_CHARACTER_LIMIT) {
+    return {
+      ok: false,
+      message: `텍스트 첨부는 ${TEXT_ATTACHMENT_CHARACTER_LIMIT.toLocaleString("ko-KR")}자를 초과할 수 없습니다.`,
+    };
+  }
+
+  if (linkAttachmentUrl) {
+    try {
+      const parsedUrl = new URL(linkAttachmentUrl);
+
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error("Invalid protocol");
+      }
+    } catch {
+      return {
+        ok: false,
+        message: "텍스트 첨부 링크 URL이 올바르지 않습니다.",
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    textAttachment: {
+      plaintext,
+      ...(linkAttachmentUrl
+        ? { link_attachment_url: linkAttachmentUrl }
+        : {}),
+    },
+  };
+}
+
 function getCharacterLimitState(value: string): {
   count: number;
   remaining: number;
@@ -160,8 +222,12 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [topicError, setTopicError] = useState("");
   const [spoilerError, setSpoilerError] = useState("");
   const [pollError, setPollError] = useState("");
+  const [textAttachmentError, setTextAttachmentError] = useState("");
   const [isPollEnabled, setIsPollEnabled] = useState(false);
   const [pollOptions, setPollOptions] = useState(createInitialPollOptions);
+  const [isTextAttachmentEnabled, setIsTextAttachmentEnabled] = useState(false);
+  const [textAttachmentText, setTextAttachmentText] = useState("");
+  const [textAttachmentLink, setTextAttachmentLink] = useState("");
   const [spoilerRanges, setSpoilerRanges] = useState<ThreadsSpoilerRange[][]>([
     [],
   ]);
@@ -195,6 +261,15 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
     return result.ok ? result.pollAttachment : undefined;
   }, [isPollEnabled, pollOptions]);
+  const previewTextAttachment = useMemo(() => {
+    const result = buildTextAttachment(
+      isTextAttachmentEnabled,
+      textAttachmentText,
+      textAttachmentLink,
+    );
+
+    return result.ok ? result.textAttachment : undefined;
+  }, [isTextAttachmentEnabled, textAttachmentLink, textAttachmentText]);
   const topicTag = useMemo(() => {
     if (selectedTopicTag === NO_TOPIC_TAG) {
       return "";
@@ -329,6 +404,11 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   function togglePoll() {
     setPollError("");
 
+    if (!isPollEnabled && isTextAttachmentEnabled) {
+      setPollError("설문은 텍스트 첨부와 함께 사용할 수 없습니다.");
+      return;
+    }
+
     setIsPollEnabled((current) => {
       const next = !current;
 
@@ -347,6 +427,42 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         optionIndex === index ? value : option,
       ),
     );
+  }
+
+  function toggleTextAttachment() {
+    setTextAttachmentError("");
+
+    if (!isTextAttachmentEnabled && isPollEnabled) {
+      setTextAttachmentError("텍스트 첨부는 설문과 함께 사용할 수 없습니다.");
+      return;
+    }
+
+    if (!isTextAttachmentEnabled && hasImageMedia) {
+      setTextAttachmentError(
+        "이미지를 해제한 뒤 텍스트 첨부를 추가할 수 있습니다.",
+      );
+      return;
+    }
+
+    setIsTextAttachmentEnabled((current) => {
+      const next = !current;
+
+      if (next) {
+        setPlatforms(["threads"]);
+      }
+
+      return next;
+    });
+  }
+
+  function updateTextAttachmentText(value: string) {
+    setTextAttachmentError("");
+    setTextAttachmentText(value);
+  }
+
+  function updateTextAttachmentLink(value: string) {
+    setTextAttachmentError("");
+    setTextAttachmentLink(value);
   }
 
   function addPollOption() {
@@ -482,6 +598,14 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     if (isPollEnabled) {
       updateThreadMedia(partIndex, {
         imageError: "설문 게시에는 이미지를 함께 첨부할 수 없습니다.",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    if (isTextAttachmentEnabled) {
+      updateThreadMedia(partIndex, {
+        imageError: "텍스트 첨부 게시에는 이미지를 함께 첨부할 수 없습니다.",
       });
       event.target.value = "";
       return;
@@ -814,6 +938,87 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
             </div>
           ) : null}
 
+          {isMainPost && isTextAttachmentEnabled ? (
+            <div className="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-md bg-white text-teal-700">
+                    <FileText aria-hidden="true" className="h-4 w-4" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">
+                      텍스트 첨부
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                      긴 글 최대{" "}
+                      {TEXT_ATTACHMENT_CHARACTER_LIMIT.toLocaleString("ko-KR")}
+                      자
+                    </p>
+                  </div>
+                </div>
+                <button
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-zinc-400 transition hover:bg-white hover:text-rose-700"
+                  type="button"
+                  onClick={toggleTextAttachment}
+                  title="텍스트 첨부 닫기"
+                >
+                  <X aria-hidden="true" className="h-4 w-4" />
+                </button>
+              </div>
+
+              <textarea
+                className={`min-h-40 w-full resize-y rounded-md border bg-white px-3 py-2 text-sm leading-6 text-zinc-950 shadow-sm transition placeholder:text-zinc-400 focus:outline-none ${
+                  countTextAttachmentCharacters(textAttachmentText) >
+                  TEXT_ATTACHMENT_CHARACTER_LIMIT
+                    ? "border-rose-300 focus:border-rose-500"
+                    : "border-zinc-300 focus:border-teal-700"
+                }`}
+                value={textAttachmentText}
+                onChange={(event) =>
+                  updateTextAttachmentText(event.target.value)
+                }
+                placeholder="긴 글 내용을 입력하세요."
+              />
+              <div className="mt-2 flex items-center justify-between gap-3 text-xs font-semibold">
+                <span
+                  className={
+                    countTextAttachmentCharacters(textAttachmentText) >
+                    TEXT_ATTACHMENT_CHARACTER_LIMIT
+                      ? "text-rose-700"
+                      : "text-zinc-500"
+                  }
+                >
+                  {countTextAttachmentCharacters(
+                    textAttachmentText,
+                  ).toLocaleString("ko-KR")}{" "}
+                  / {TEXT_ATTACHMENT_CHARACTER_LIMIT.toLocaleString("ko-KR")}
+                </span>
+              </div>
+
+              <label className="mt-3 block">
+                <span className="mb-2 flex items-center gap-2 text-xs font-semibold text-zinc-600">
+                  <Link aria-hidden="true" className="h-4 w-4" />
+                  첨부 링크
+                  <span className="font-medium text-zinc-400">선택</span>
+                </span>
+                <input
+                  className="h-10 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-950 shadow-sm transition placeholder:text-zinc-400 focus:border-teal-700 focus:outline-none"
+                  value={textAttachmentLink}
+                  onChange={(event) =>
+                    updateTextAttachmentLink(event.target.value)
+                  }
+                  placeholder="https://example.com"
+                />
+              </label>
+
+              {textAttachmentError ? (
+                <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+                  {textAttachmentError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {media.imageUrl ? (
             <div className="mt-3 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50">
               <div className="relative h-64 w-full">
@@ -869,10 +1074,14 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
               className="inline-flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-zinc-100 hover:text-teal-700 disabled:cursor-not-allowed disabled:text-zinc-300"
               type="button"
               onClick={() => imageInputRefs.current[partIndex]?.click()}
-              disabled={media.isUploading || isPollEnabled}
+              disabled={
+                media.isUploading || isPollEnabled || isTextAttachmentEnabled
+              }
               title={
                 isPollEnabled
                   ? "설문 게시에는 이미지를 함께 첨부할 수 없습니다."
+                  : isTextAttachmentEnabled
+                    ? "텍스트 첨부 게시에는 이미지를 함께 첨부할 수 없습니다."
                   : "이미지 첨부"
               }
             >
@@ -900,15 +1109,43 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
                 }`}
                 type="button"
                 onClick={togglePoll}
-                disabled={!isPollEnabled && hasImageMedia}
+                disabled={
+                  !isPollEnabled && (hasImageMedia || isTextAttachmentEnabled)
+                }
                 title={
-                  !isPollEnabled && hasImageMedia
+                  !isPollEnabled && isTextAttachmentEnabled
+                    ? "텍스트 첨부를 해제한 뒤 설문을 추가할 수 있습니다."
+                    : !isPollEnabled && hasImageMedia
                     ? "이미지를 해제한 뒤 설문을 추가할 수 있습니다."
                     : "설문 만들기"
                 }
               >
                 <ListChecks aria-hidden="true" className="h-4 w-4" />
                 설문
+              </button>
+            ) : null}
+            {isMainPost ? (
+              <button
+                className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-full px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:text-zinc-300 ${
+                  isTextAttachmentEnabled
+                    ? "bg-teal-50 text-teal-700 hover:bg-teal-100"
+                    : "hover:bg-zinc-100 hover:text-zinc-900"
+                }`}
+                type="button"
+                onClick={toggleTextAttachment}
+                disabled={
+                  !isTextAttachmentEnabled && (hasImageMedia || isPollEnabled)
+                }
+                title={
+                  !isTextAttachmentEnabled && isPollEnabled
+                    ? "설문을 해제한 뒤 텍스트 첨부를 추가할 수 있습니다."
+                    : !isTextAttachmentEnabled && hasImageMedia
+                      ? "이미지를 해제한 뒤 텍스트 첨부를 추가할 수 있습니다."
+                      : "텍스트 첨부"
+                }
+              >
+                <FileText aria-hidden="true" className="h-4 w-4" />
+                텍스트 첨부
               </button>
             ) : null}
             {media.imageUrl ? (
@@ -976,6 +1213,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     setTopicError("");
     setSpoilerError("");
     setPollError("");
+    setTextAttachmentError("");
     setResults(null);
     const mainPost = trimTextWithSpoilerRanges(
       content,
@@ -987,13 +1225,24 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       isImageSpoiler: media.isImageSpoiler || undefined,
     }));
     const pollResult = buildPollAttachment(isPollEnabled, pollOptions);
+    const textAttachmentResult = buildTextAttachment(
+      isTextAttachmentEnabled,
+      textAttachmentText,
+      textAttachmentLink,
+    );
 
     if (!pollResult.ok) {
       setPollError(pollResult.message);
       return;
     }
 
+    if (!textAttachmentResult.ok) {
+      setTextAttachmentError(textAttachmentResult.message);
+      return;
+    }
+
     const pollAttachment = pollResult.pollAttachment;
+    const textAttachment = textAttachmentResult.textAttachment;
 
     if (!mainPost.text && !mediaPayload[0]?.imageUrl) {
       setError("게시글 내용 또는 이미지를 입력해 주세요.");
@@ -1073,6 +1322,26 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       return;
     }
 
+    if (textAttachment && pollAttachment) {
+      setError("텍스트 첨부는 설문과 함께 사용할 수 없습니다.");
+      return;
+    }
+
+    if (textAttachment && hasImageMedia) {
+      setError("텍스트 첨부는 이미지 첨부 게시와 함께 사용할 수 없습니다.");
+      return;
+    }
+
+    if (textAttachment && !platforms.includes("threads")) {
+      setError("텍스트 첨부 게시는 현재 Threads만 지원합니다.");
+      return;
+    }
+
+    if (textAttachment && platforms.includes("x")) {
+      setError("텍스트 첨부 게시를 하려면 X 선택을 해제해 주세요.");
+      return;
+    }
+
     if (hasImageMedia && !platforms.includes("threads")) {
       setError("이미지 첨부 게시는 현재 Threads만 지원합니다.");
       return;
@@ -1097,6 +1366,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           isImageSpoiler: mediaPayload[0]?.isImageSpoiler || undefined,
           pollAttachment,
           spoilerRanges: hasTextSpoiler ? publishSpoilerRanges : undefined,
+          textAttachment,
           threadMedia: hasImageMedia ? mediaPayload : undefined,
           topicTag: topicTagResult.value || undefined,
           threadItems:
@@ -1126,8 +1396,12 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         setTopicError("");
         setSpoilerError("");
         setPollError("");
+        setTextAttachmentError("");
         setIsPollEnabled(false);
         setPollOptions(createInitialPollOptions());
+        setIsTextAttachmentEnabled(false);
+        setTextAttachmentText("");
+        setTextAttachmentLink("");
         setSpoilerRanges([[]]);
         setThreadMedia([createEmptyThreadMedia()]);
         setCreatedAt(new Date().toISOString());
@@ -1412,6 +1686,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
             content={content}
             pollAttachment={previewPollAttachment}
             spoilerRanges={spoilerRanges}
+            textAttachment={previewTextAttachment}
             threadMedia={threadMedia}
             threadItems={threadItems}
             topicTag={topicTag}

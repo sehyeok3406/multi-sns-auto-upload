@@ -5,6 +5,7 @@ import {
   getThreadsCredentials,
   getThreadsJson,
   postThreadsForm,
+  publishThreadsContainerWithRetry,
 } from "@/lib/publisher/threadsApi";
 import type {
   ThreadsMediaSummary,
@@ -182,21 +183,26 @@ export async function replyToThreadsMedia(
     };
   }
 
-  const publishResponse = await postThreadsForm<ThreadsPublishContainerResponse>(
-    `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(userId)}/threads_publish`,
-    {
-      creation_id: creationId,
-      access_token: accessToken,
-    },
-  );
+  const publishResponse =
+    await publishThreadsContainerWithRetry<ThreadsPublishContainerResponse>(
+      `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(userId)}/threads_publish`,
+      {
+        creation_id: creationId,
+        access_token: accessToken,
+      },
+      {
+        stage: "publish",
+        stageLabel: "답글 발행",
+      },
+      { checkReadiness: false },
+    );
 
   if (!publishResponse.ok) {
     return {
       success: false,
-      message: createThreadsErrorMessage(
-        publishResponse.status,
-        publishResponse.body,
-      ),
+      message:
+        publishResponse.readinessErrorDetail?.message ??
+        createThreadsErrorMessage(publishResponse.status, publishResponse.body),
       postedAt,
     };
   }

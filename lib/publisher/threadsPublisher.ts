@@ -4,6 +4,7 @@ import {
   createThreadsErrorDetail,
   getThreadsCredentials,
   postThreadsForm,
+  publishThreadsContainerWithRetry,
 } from "@/lib/publisher/threadsApi";
 import { createSpoilerTextEntities } from "@/lib/threadsSpoilers";
 import type {
@@ -220,13 +221,20 @@ export async function publishToThreads(
         continue;
       }
 
-      const publishResponse = await postThreadsForm<ThreadsApiResponse>(
-        getPublishEndpoint("threads_publish"),
-        {
-          creation_id: creationId,
-          access_token: accessToken,
-        },
-      );
+      const publishResponse =
+        await publishThreadsContainerWithRetry<ThreadsApiResponse>(
+          getPublishEndpoint("threads_publish"),
+          {
+            creation_id: creationId,
+            access_token: accessToken,
+          },
+          {
+            stage: "publish",
+            stageLabel: "게시 발행",
+            itemIndex: index + 1,
+            itemLabel: getThreadItemLabel(index, threadParts.length),
+          },
+        );
 
       if (!publishResponse.ok) {
         const itemLabel = getThreadItemLabel(index, threadParts.length);
@@ -235,16 +243,18 @@ export async function publishToThreads(
           platform: "threads",
           success: false,
           message: `${itemLabel} 발행 실패`,
-          errorDetail: createThreadsErrorDetail(
-            publishResponse.status,
-            publishResponse.body,
-            {
-              stage: "publish",
-              stageLabel: "게시 발행",
-              itemIndex: index + 1,
-              itemLabel,
-            },
-          ),
+          errorDetail:
+            publishResponse.readinessErrorDetail ??
+            createThreadsErrorDetail(
+              publishResponse.status,
+              publishResponse.body,
+              {
+                stage: "publish",
+                stageLabel: "게시 발행",
+                itemIndex: index + 1,
+                itemLabel,
+              },
+            ),
           postedAt,
           threadPostIds: publishedIds,
         };

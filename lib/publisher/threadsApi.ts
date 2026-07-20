@@ -18,6 +18,35 @@ export type ThreadsApiResponse<T> =
     })
   | string;
 
+type ThreadsContainerStatusResponse = {
+  status_code?: string;
+  error_message?: string;
+};
+
+type ThreadsRequestResult<T> = {
+  ok: boolean;
+  status: number;
+  body: ThreadsApiResponse<T>;
+};
+
+type ThreadsContainerReadinessResult = {
+  ok: boolean;
+  attempts: number;
+  statusCode?: string;
+  errorDetail?: PublishErrorDetail;
+};
+
+type ThreadsContainerPublishResult<T> = ThreadsRequestResult<T> & {
+  attempts: number;
+  readiness: ThreadsContainerReadinessResult;
+  readinessErrorDetail?: PublishErrorDetail;
+};
+
+const THREADS_CONTAINER_STATUS_DELAYS_MS = [
+  1000, 1500, 2500, 4000, 6000, 8000,
+];
+const THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS = [1500, 2500, 4000, 6000];
+
 export function getRequiredEnv(key: string) {
   const value = process.env[key]?.trim();
 
@@ -66,6 +95,46 @@ export function createThreadsErrorMessage<T>(
   }`;
 }
 
+function sleep(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
+function getThreadsApiError<T>(response: ThreadsApiResponse<T>) {
+  return typeof response === "string" ? undefined : response.error;
+}
+
+export function isThreadsContainerNotReadyError<T>(
+  response: ThreadsApiResponse<T>,
+) {
+  const error = getThreadsApiError(response);
+  const message =
+    (typeof response === "string" ? response : error?.message ?? "")
+      .toLowerCase();
+
+  return (
+    error?.error_subcode === 4279009 ||
+    (error?.code === 24 && message.includes("cannot be found")) ||
+    message.includes("media with id") ||
+    message.includes("media id is not available")
+  );
+}
+
+function isRetryableContainerStatusError<T>(
+  status: number,
+  response: ThreadsApiResponse<T>,
+) {
+  const error = getThreadsApiError(response);
+
+  return (
+    status === 429 ||
+    status >= 500 ||
+    isThreadsContainerNotReadyError(response) ||
+    error?.error_subcode === 33
+  );
+}
+
 function getRetryHint(detail: PublishErrorDetail) {
   if (detail.httpStatus === 401 || detail.code === 190) {
     return "Threads access token이 만료되었거나 잘못되었습니다. long-lived token을 다시 발급해 Vercel 환경 변수에 반영하세요.";
@@ -88,6 +157,25 @@ function getRetryHint(detail: PublishErrorDetail) {
   }
 
   return undefined;
+}
+
+function createThreadsContainerStatusError(
+  statusCode: string,
+  context: Partial<PublishErrorDetail>,
+): PublishErrorDetail {
+  const detail: PublishErrorDetail = {
+    source: "Threads API",
+    stage: "container-status",
+    stageLabel: "컨테이너 준비 확인",
+    message: `Threads 컨테이너 상태가 ${statusCode}입니다.`,
+    retryHint:
+      statusCode === "ERROR"
+        ? "이미지 URL이 공개 접근 가능한지, 파일 형식과 용량이 Threads 조건에 맞는지 확인하세요."
+        : "컨테이너가 만료되었습니다. 같은 게시글로 다시 게시를 시도하세요.",
+    ...context,
+  };
+
+  return detail;
 }
 
 export function createThreadsErrorDetail<T>(
@@ -168,5 +256,137 @@ export async function getThreadsJson<T>(
     ok: response.ok,
     status: response.status,
     body: await readThreadsResponse<T>(response),
+  };
+}
+
+export async function waitForThreadsContainer(
+  creationId: string,
+  accessToken: string,
+  context: Partial<PublishErrorDetail> = {},
+): Promise<ThreadsContainerReadinessResult> {
+  let lastStatusCode: string | undefined;
+
+  for (
+    let attemptIndex = 0;
+    attemptIndex < THREADS_CONTAINER_STATUS_DELAYS_MS.length;
+    attemptIndex += 1
+  ) {
+    const response = await getThreadsJson<ThreadsContainerStatusResponse>(
+      `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(creationId)}`,
+      {
+        fields: "status_code",
+        access_token: accessToken,
+      },
+    );
+
+    if (response.ok && typeof response.body !== "string") {
+      const statusCode = response.body.status_code?.toUpperCase();
+      lastStatusCode = statusCode;
+
+      if (statusCode === "FINISHED" || statusCode === "PUBLISHED") {
+        return {
+          ok: true,
+          attempts: attemptIndex + 1,
+          statusCode,
+        };
+      }
+
+      if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+        return {
+          ok: false,
+          attempts: attemptIndex + 1,
+          statusCode,
+          errorDetail: createThreadsContainerStatusError(statusCode, context),
+        };
+      }
+    } else if (
+      !response.ok &&
+      !isRetryableContainerStatusError(response.status, response.body)
+    ) {
+      return {
+        ok: false,
+        attempts: attemptIndex + 1,
+        errorDetail: createThreadsErrorDetail(response.status, response.body, {
+          stage: "container-status",
+          stageLabel: "컨테이너 준비 확인",
+          retryHint:
+            "Threads 컨테이너 상태 조회 권한과 creation_id 값을 확인하세요.",
+          ...context,
+        }),
+      };
+    }
+
+    await sleep(THREADS_CONTAINER_STATUS_DELAYS_MS[attemptIndex]);
+  }
+
+  return {
+    ok: true,
+    attempts: THREADS_CONTAINER_STATUS_DELAYS_MS.length,
+    statusCode: lastStatusCode,
+  };
+}
+
+export async function publishThreadsContainerWithRetry<T>(
+  publishUrl: string,
+  params: {
+    access_token: string;
+    creation_id: string;
+  },
+  context: Partial<PublishErrorDetail> = {},
+  options: { checkReadiness?: boolean } = {},
+): Promise<ThreadsContainerPublishResult<T>> {
+  const readiness =
+    options.checkReadiness === false
+      ? { ok: true, attempts: 0 }
+      : await waitForThreadsContainer(
+          params.creation_id,
+          params.access_token,
+          context,
+        );
+
+  if (!readiness.ok) {
+    return {
+      ok: false,
+      status: 0,
+      body: "" as ThreadsApiResponse<T>,
+      attempts: 0,
+      readiness,
+      readinessErrorDetail: readiness.errorDetail,
+    };
+  }
+
+  let lastResponse: ThreadsRequestResult<T> | null = null;
+
+  for (
+    let attemptIndex = 0;
+    attemptIndex <= THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS.length;
+    attemptIndex += 1
+  ) {
+    const response = await postThreadsForm<T>(publishUrl, params);
+    lastResponse = response;
+
+    if (response.ok || !isThreadsContainerNotReadyError(response.body)) {
+      return {
+        ...response,
+        attempts: attemptIndex + 1,
+        readiness,
+      };
+    }
+
+    const delay = THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS[attemptIndex];
+
+    if (delay) {
+      await sleep(delay);
+    }
+  }
+
+  return {
+    ...(lastResponse ?? {
+      ok: false,
+      status: 0,
+      body: "" as ThreadsApiResponse<T>,
+    }),
+    attempts: THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS.length + 1,
+    readiness,
   };
 }

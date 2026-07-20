@@ -12,6 +12,13 @@ import {
   Send,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PublishErrorDetails } from "@/components/PublishErrorDetails";
+import {
+  THREADS_TEXT_LIMIT,
+  THREADS_TEXT_WARNING_THRESHOLD,
+  countThreadsTextCharacters,
+  validateThreadsText,
+} from "@/lib/threadsLimits";
 import type {
   ThreadsInsightValues,
   ThreadsInsightsSummary,
@@ -53,6 +60,44 @@ function getPreviewText(value?: string) {
 
 type PostInsightPreview = Pick<ThreadsInsightValues, "likes" | "replies" | "reposts">;
 
+function ReplyPublishFeedback({
+  result,
+  compact = false,
+}: {
+  result: ThreadsReplyPublishResult;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`${compact ? "mt-3 px-3 py-2" : "mt-3 px-3 py-2.5"} rounded-md border text-sm font-medium ${
+        result.success
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-rose-200 bg-rose-50 text-rose-700"
+      }`}
+    >
+      <p>
+        {result.success ? "성공" : "실패"} - {result.message}
+        {result.postUrl ? (
+          <>
+            {" "}
+            <a
+              className="underline underline-offset-2"
+              href={result.postUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              보기
+            </a>
+          </>
+        ) : null}
+      </p>
+      {!result.success && result.errorDetail ? (
+        <PublishErrorDetails compact detail={result.errorDetail} />
+      ) : null}
+    </div>
+  );
+}
+
 export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
   const [posts, setPosts] = useState<ThreadsMediaSummary[]>([]);
   const [selectedPostId, setSelectedPostId] = useState("");
@@ -79,6 +124,8 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
     () => posts.find((post) => post.id === selectedPostId) ?? null,
     [posts, selectedPostId],
   );
+  const rootReplyCharacterCount = countThreadsTextCharacters(rootReplyContent);
+  const inlineReplyCharacterCount = countThreadsTextCharacters(inlineReplyContent);
 
   const loadPostInsights = useCallback(async (limit: number) => {
     setIsLoadingPostInsights(true);
@@ -240,6 +287,13 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
 
     if (!trimmedContent) {
       setError("답글 내용을 입력해 주세요.");
+      return;
+    }
+
+    const contentValidation = validateThreadsText(trimmedContent);
+
+    if (!contentValidation.ok) {
+      setError(`답글은 ${THREADS_TEXT_LIMIT}자를 초과할 수 없습니다.`);
       return;
     }
 
@@ -553,14 +607,26 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                   />
                 </label>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs font-medium text-zinc-500">
-                    {rootReplyContent.length.toLocaleString("ko-KR")}자
+                  <p
+                    className={`text-xs font-semibold ${
+                      rootReplyCharacterCount > THREADS_TEXT_LIMIT
+                        ? "text-rose-600"
+                        : rootReplyCharacterCount >=
+                            THREADS_TEXT_WARNING_THRESHOLD
+                          ? "text-amber-600"
+                          : "text-zinc-500"
+                    }`}
+                  >
+                    {rootReplyCharacterCount.toLocaleString("ko-KR")} / {THREADS_TEXT_LIMIT}자
                   </p>
                   <button
                     className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:bg-zinc-400"
                     type="button"
                     onClick={handleRootReplySubmit}
-                    disabled={submittingReplyTargetId === selectedPost.id}
+                    disabled={
+                      submittingReplyTargetId === selectedPost.id ||
+                      rootReplyCharacterCount > THREADS_TEXT_LIMIT
+                    }
                   >
                     {submittingReplyTargetId === selectedPost.id ? (
                       <Loader2
@@ -583,29 +649,7 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                 ) : null}
 
                 {rootReplyResult ? (
-                  <p
-                    className={`mt-3 rounded-md border px-3 py-2.5 text-sm font-medium ${
-                      rootReplyResult.success
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-rose-200 bg-rose-50 text-rose-700"
-                    }`}
-                  >
-                    {rootReplyResult.success ? "성공" : "실패"} -{" "}
-                    {rootReplyResult.message}
-                    {rootReplyResult.postUrl ? (
-                      <>
-                        {" "}
-                        <a
-                          className="underline underline-offset-2"
-                          href={rootReplyResult.postUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          보기
-                        </a>
-                      </>
-                    ) : null}
-                  </p>
+                  <ReplyPublishFeedback result={rootReplyResult} />
                 ) : null}
               </div>
 
@@ -728,17 +772,28 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                               />
                             </label>
                             <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                              <p className="text-xs font-medium text-zinc-500">
-                                {inlineReplyContent.length.toLocaleString(
+                              <p
+                                className={`text-xs font-semibold ${
+                                  inlineReplyCharacterCount > THREADS_TEXT_LIMIT
+                                    ? "text-rose-600"
+                                    : inlineReplyCharacterCount >=
+                                        THREADS_TEXT_WARNING_THRESHOLD
+                                      ? "text-amber-600"
+                                      : "text-zinc-500"
+                                }`}
+                              >
+                                {inlineReplyCharacterCount.toLocaleString(
                                   "ko-KR",
-                                )}
-                                자
+                                )} / {THREADS_TEXT_LIMIT}자
                               </p>
                               <button
                                 className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:bg-zinc-400"
                                 type="button"
                                 onClick={() => handleInlineReplySubmit(reply)}
-                                disabled={isSubmittingThisReply}
+                                disabled={
+                                  isSubmittingThisReply ||
+                                  inlineReplyCharacterCount > THREADS_TEXT_LIMIT
+                                }
                               >
                                 {isSubmittingThisReply ? (
                                   <Loader2
@@ -761,29 +816,10 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                             ) : null}
 
                             {inlineReplyResult ? (
-                              <p
-                                className={`mt-3 rounded-md border px-3 py-2 text-sm font-medium ${
-                                  inlineReplyResult.success
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                    : "border-rose-200 bg-rose-50 text-rose-700"
-                                }`}
-                              >
-                                {inlineReplyResult.success ? "성공" : "실패"} -{" "}
-                                {inlineReplyResult.message}
-                                {inlineReplyResult.postUrl ? (
-                                  <>
-                                    {" "}
-                                    <a
-                                      className="underline underline-offset-2"
-                                      href={inlineReplyResult.postUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      보기
-                                    </a>
-                                  </>
-                                ) : null}
-                              </p>
+                              <ReplyPublishFeedback
+                                compact
+                                result={inlineReplyResult}
+                              />
                             ) : null}
                           </div>
                         ) : null}

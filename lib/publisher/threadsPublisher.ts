@@ -1,9 +1,9 @@
 import { getThreadsAccountStatus } from "@/lib/accounts";
 import {
   THREADS_GRAPH_BASE_URL,
+  createThreadsContainerWithRetry,
   createThreadsErrorDetail,
   getThreadsCredentials,
-  postThreadsForm,
   publishThreadsContainerWithRetry,
 } from "@/lib/publisher/threadsApi";
 import { createSpoilerTextEntities } from "@/lib/threadsSpoilers";
@@ -22,12 +22,6 @@ type ThreadsApiResponse = {
 
 function getPublishEndpoint(path: "threads" | "threads_publish") {
   return `${THREADS_GRAPH_BASE_URL}/me/${path}`;
-}
-
-function sleep(milliseconds: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, milliseconds);
-  });
 }
 
 function getThreadItemLabel(index: number, total: number) {
@@ -58,6 +52,11 @@ export async function publishToThreads(
 ): Promise<PublishResult> {
   const status = getThreadsAccountStatus();
   const postedAt = new Date().toISOString();
+  const publishedIds: string[] = [];
+  const threadParts = [content, ...(options.threadItems ?? [])];
+  let activeItemIndex = 0;
+  let activeStage = "configuration";
+  let activeStageLabel = "연결 정보 확인";
 
   if (!status.connected) {
     return {
@@ -76,8 +75,6 @@ export async function publishToThreads(
 
   try {
     const { accessToken } = getThreadsCredentials();
-    const publishedIds: string[] = [];
-    const threadParts = [content, ...(options.threadItems ?? [])];
     const legacyFirstMedia: ThreadsPostMedia = {
       imageUrl: options.imageUrl,
       isImageSpoiler: options.isImageSpoiler,
@@ -87,6 +84,7 @@ export async function publishToThreads(
     );
 
     for (let index = 0; index < threadParts.length; index += 1) {
+      activeItemIndex = index;
       const media = mediaItems[index];
       const isFirstPost = index === 0;
       const isImagePost = Boolean(media?.imageUrl);
@@ -158,10 +156,13 @@ export async function publishToThreads(
         containerParams.reply_to_id = previousPostId;
       }
 
-      const containerResponse = await postThreadsForm<ThreadsApiResponse>(
-        getPublishEndpoint("threads"),
-        containerParams,
-      );
+      activeStage = "container";
+      activeStageLabel = "컨테이너 생성";
+      const containerResponse =
+        await createThreadsContainerWithRetry<ThreadsApiResponse>(
+          getPublishEndpoint("threads"),
+          containerParams,
+        );
 
       if (!containerResponse.ok) {
         const itemLabel = getThreadItemLabel(index, threadParts.length);
@@ -178,6 +179,7 @@ export async function publishToThreads(
               stageLabel: "컨테이너 생성",
               itemIndex: index + 1,
               itemLabel,
+              attempts: containerResponse.attempts,
             },
           ),
           postedAt,
@@ -213,14 +215,11 @@ export async function publishToThreads(
 
       if (isTextPost) {
         publishedIds.push(creationId);
-
-        if (index < threadParts.length - 1) {
-          await sleep(1500);
-        }
-
         continue;
       }
 
+      activeStage = "publish";
+      activeStageLabel = "게시 발행";
       const publishResponse =
         await publishThreadsContainerWithRetry<ThreadsApiResponse>(
           getPublishEndpoint("threads_publish"),
@@ -253,6 +252,7 @@ export async function publishToThreads(
                 stageLabel: "게시 발행",
                 itemIndex: index + 1,
                 itemLabel,
+                attempts: publishResponse.attempts,
               },
             ),
           postedAt,
@@ -265,13 +265,30 @@ export async function publishToThreads(
           ? undefined
           : publishResponse.body.id;
 
-      if (publishedPostId) {
-        publishedIds.push(publishedPostId);
+      if (!publishedPostId) {
+        const itemLabel = getThreadItemLabel(index, threadParts.length);
+
+        return {
+          platform: "threads",
+          success: false,
+          message: `${itemLabel} 게시물 ID 누락`,
+          errorDetail: createLocalErrorDetail({
+            stage: "publish",
+            stageLabel: "게시 발행",
+            itemIndex: index + 1,
+            itemLabel,
+            attempts: publishResponse.attempts,
+            message: "Threads API가 발행된 게시물 ID를 반환하지 않았습니다.",
+            retryHint:
+              "Threads 계정에서 실제 게시 여부를 먼저 확인하세요. 게시물이 없다면 다시 시도하고, 반복되면 Meta API 응답 로그를 확인하세요.",
+          }),
+          postedAt,
+          threadPostIds: publishedIds,
+        };
       }
 
-      if (index < threadParts.length - 1) {
-        await sleep(1500);
-      }
+      publishedIds.push(publishedPostId);
+
     }
 
     const postId = publishedIds[0];
@@ -294,18 +311,25 @@ export async function publishToThreads(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    const itemLabel = getThreadItemLabel(activeItemIndex, threadParts.length);
 
     return {
       platform: "threads",
       success: false,
-      message: `Threads API request failed: ${message}`,
+      message: `${itemLabel} 요청 실행 실패: ${message}`,
       errorDetail: createLocalErrorDetail({
-        stage: "network",
-        stageLabel: "요청 실행",
+        stage: activeStage,
+        stageLabel: activeStageLabel,
+        itemIndex: activeItemIndex + 1,
+        itemLabel,
         message,
-        retryHint: "네트워크 오류, 서버 런타임 오류, 환경 변수 값을 확인하세요.",
+        retryHint:
+          error instanceof Error && error.name === "TimeoutError"
+            ? "Threads API 응답 시간이 초과되었습니다. 잠시 후 다시 시도하세요. 일부 타래가 이미 게시됐는지 먼저 확인하는 것이 좋습니다."
+            : "네트워크 오류, 서버 런타임 오류, 환경 변수 값을 확인하세요. 일부 타래가 이미 게시됐는지도 확인해 주세요.",
       }),
       postedAt,
+      threadPostIds: publishedIds,
     };
   }
 }

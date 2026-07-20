@@ -42,10 +42,16 @@ type ThreadsContainerPublishResult<T> = ThreadsRequestResult<T> & {
   readinessErrorDetail?: PublishErrorDetail;
 };
 
+type ThreadsRequestRetryResult<T> = ThreadsRequestResult<T> & {
+  attempts: number;
+};
+
 const THREADS_CONTAINER_STATUS_DELAYS_MS = [
   1000, 1500, 2500, 4000, 6000, 8000,
 ];
+const THREADS_CONTAINER_CREATE_RETRY_DELAYS_MS = [1500, 2500, 4000, 6000];
 const THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS = [1500, 2500, 4000, 6000];
+const THREADS_REQUEST_TIMEOUT_MS = 20_000;
 
 export function getRequiredEnv(key: string) {
   const value = process.env[key]?.trim();
@@ -112,12 +118,18 @@ export function isThreadsContainerNotReadyError<T>(
   const message =
     (typeof response === "string" ? response : error?.message ?? "")
       .toLowerCase();
+  const targetUnavailable =
+    message.includes("cannot be found") ||
+    message.includes("does not exist") ||
+    message.includes("not found") ||
+    message.includes("is not available");
 
   return (
     error?.error_subcode === 4279009 ||
-    (error?.code === 24 && message.includes("cannot be found")) ||
+    (error?.code === 24 && targetUnavailable) ||
     message.includes("media with id") ||
-    message.includes("media id is not available")
+    message.includes("media id is not available") ||
+    (message.includes("reply_to_id") && targetUnavailable)
   );
 }
 
@@ -220,7 +232,7 @@ export function createThreadsErrorDetail<T>(
 export async function postThreadsForm<T>(
   url: string,
   params: Record<string, string>,
-): Promise<{ ok: boolean; status: number; body: ThreadsApiResponse<T> }> {
+): Promise<ThreadsRequestResult<T>> {
   const body = new URLSearchParams(params);
   const response = await fetch(url, {
     method: "POST",
@@ -228,6 +240,7 @@ export async function postThreadsForm<T>(
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
+    signal: AbortSignal.timeout(THREADS_REQUEST_TIMEOUT_MS),
   });
 
   return {
@@ -235,6 +248,56 @@ export async function postThreadsForm<T>(
     status: response.status,
     body: await readThreadsResponse<T>(response),
   };
+}
+
+async function postThreadsFormWithRetry<T>(
+  url: string,
+  params: Record<string, string>,
+  retryDelays: number[],
+): Promise<ThreadsRequestRetryResult<T>> {
+  let lastResponse: ThreadsRequestResult<T> | null = null;
+
+  for (
+    let attemptIndex = 0;
+    attemptIndex <= retryDelays.length;
+    attemptIndex += 1
+  ) {
+    const response = await postThreadsForm<T>(url, params);
+    lastResponse = response;
+
+    if (response.ok || !isThreadsContainerNotReadyError(response.body)) {
+      return {
+        ...response,
+        attempts: attemptIndex + 1,
+      };
+    }
+
+    const delay = retryDelays[attemptIndex];
+
+    if (delay) {
+      await sleep(delay);
+    }
+  }
+
+  return {
+    ...(lastResponse ?? {
+      ok: false,
+      status: 0,
+      body: "" as ThreadsApiResponse<T>,
+    }),
+    attempts: retryDelays.length + 1,
+  };
+}
+
+export async function createThreadsContainerWithRetry<T>(
+  createUrl: string,
+  params: Record<string, string>,
+): Promise<ThreadsRequestRetryResult<T>> {
+  return postThreadsFormWithRetry(
+    createUrl,
+    params,
+    THREADS_CONTAINER_CREATE_RETRY_DELAYS_MS,
+  );
 }
 
 export async function getThreadsJson<T>(
@@ -250,6 +313,7 @@ export async function getThreadsJson<T>(
   const response = await fetch(requestUrl, {
     method: "GET",
     cache: "no-store",
+    signal: AbortSignal.timeout(THREADS_REQUEST_TIMEOUT_MS),
   });
 
   return {
@@ -268,7 +332,7 @@ export async function waitForThreadsContainer(
 
   for (
     let attemptIndex = 0;
-    attemptIndex < THREADS_CONTAINER_STATUS_DELAYS_MS.length;
+    attemptIndex <= THREADS_CONTAINER_STATUS_DELAYS_MS.length;
     attemptIndex += 1
   ) {
     const response = await getThreadsJson<ThreadsContainerStatusResponse>(
@@ -296,7 +360,10 @@ export async function waitForThreadsContainer(
           ok: false,
           attempts: attemptIndex + 1,
           statusCode,
-          errorDetail: createThreadsContainerStatusError(statusCode, context),
+          errorDetail: createThreadsContainerStatusError(statusCode, {
+            ...context,
+            attempts: attemptIndex + 1,
+          }),
         };
       }
     } else if (
@@ -312,16 +379,21 @@ export async function waitForThreadsContainer(
           retryHint:
             "Threads 컨테이너 상태 조회 권한과 creation_id 값을 확인하세요.",
           ...context,
+          attempts: attemptIndex + 1,
         }),
       };
     }
 
-    await sleep(THREADS_CONTAINER_STATUS_DELAYS_MS[attemptIndex]);
+    const delay = THREADS_CONTAINER_STATUS_DELAYS_MS[attemptIndex];
+
+    if (delay) {
+      await sleep(delay);
+    }
   }
 
   return {
     ok: true,
-    attempts: THREADS_CONTAINER_STATUS_DELAYS_MS.length,
+    attempts: THREADS_CONTAINER_STATUS_DELAYS_MS.length + 1,
     statusCode: lastStatusCode,
   };
 }
@@ -355,38 +427,14 @@ export async function publishThreadsContainerWithRetry<T>(
     };
   }
 
-  let lastResponse: ThreadsRequestResult<T> | null = null;
-
-  for (
-    let attemptIndex = 0;
-    attemptIndex <= THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS.length;
-    attemptIndex += 1
-  ) {
-    const response = await postThreadsForm<T>(publishUrl, params);
-    lastResponse = response;
-
-    if (response.ok || !isThreadsContainerNotReadyError(response.body)) {
-      return {
-        ...response,
-        attempts: attemptIndex + 1,
-        readiness,
-      };
-    }
-
-    const delay = THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS[attemptIndex];
-
-    if (delay) {
-      await sleep(delay);
-    }
-  }
+  const response = await postThreadsFormWithRetry<T>(
+    publishUrl,
+    params,
+    THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS,
+  );
 
   return {
-    ...(lastResponse ?? {
-      ok: false,
-      status: 0,
-      body: "" as ThreadsApiResponse<T>,
-    }),
-    attempts: THREADS_CONTAINER_PUBLISH_RETRY_DELAYS_MS.length + 1,
+    ...response,
     readiness,
   };
 }

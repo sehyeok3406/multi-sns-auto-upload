@@ -19,6 +19,7 @@ export type PublishErrorDetail = {
   stageLabel?: string;
   itemIndex?: number;
   itemLabel?: string;
+  attempts?: number;
   httpStatus?: number;
   code?: number | string;
   subcode?: number | string;
@@ -109,6 +110,7 @@ export type ThreadsReplyPublishResult = {
   success: boolean;
   message: string;
   postedAt: string;
+  errorDetail?: PublishErrorDetail;
   postId?: string;
   postUrl?: string;
 };

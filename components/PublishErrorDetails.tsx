@@ -25,6 +25,7 @@ export function PublishErrorDetails({
     ["출처", detail.source],
     ["단계", detail.stageLabel ?? detail.stage],
     ["항목", detail.itemLabel],
+    ["자동 시도", detail.attempts ? `${detail.attempts}회` : ""],
     ["HTTP", formatValue(detail.httpStatus)],
     ["Code", formatValue(detail.code)],
     ["Subcode", formatValue(detail.subcode)],

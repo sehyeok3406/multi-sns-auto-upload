@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { replyToThreadsMedia } from "@/lib/publisher/threadsInbox";
+import { THREADS_TEXT_LIMIT, validateThreadsText } from "@/lib/threadsLimits";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,13 @@ export async function POST(request: Request) {
     );
   }
 
+  if (!validateThreadsText(content).ok) {
+    return NextResponse.json(
+      { message: `답글은 ${THREADS_TEXT_LIMIT}자를 초과할 수 없습니다.` },
+      { status: 400 },
+    );
+  }
+
   try {
     const result = await replyToThreadsMedia(replyToId, content);
 
@@ -60,6 +68,15 @@ export async function POST(request: Request) {
           success: false,
           message,
           postedAt: new Date().toISOString(),
+          errorDetail: {
+            source: "SNS auto upload",
+            stage: "network",
+            stageLabel: "답글 요청 실행",
+            itemLabel: "답글",
+            message,
+            retryHint:
+              "네트워크 오류 또는 Threads API 응답 지연일 수 있습니다. 실제 답글 등록 여부를 먼저 확인한 뒤 다시 시도하세요.",
+          },
         },
       },
       { status: 502 },

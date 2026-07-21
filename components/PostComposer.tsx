@@ -21,8 +21,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { PlatformSelector } from "@/components/PlatformSelector";
 import { PostPreview } from "@/components/PostPreview";
+import { PublishErrorDetails } from "@/components/PublishErrorDetails";
 import { PublishResult } from "@/components/PublishResult";
 import { Toast } from "@/components/Toast";
+import { createPublishErrorDetail } from "@/lib/publisher/errorDetails";
 import {
   CUSTOM_TOPIC_TAG,
   NO_TOPIC_TAG,
@@ -44,6 +46,7 @@ import {
 import type {
   AuthorPreset,
   Platform,
+  PublishErrorDetail,
   PublishResult as PublishResultType,
   ThreadsPostMedia,
   ThreadsPollAttachment,
@@ -65,6 +68,7 @@ type ThreadMediaState = Required<
   Pick<ThreadsPostMedia, "imageName" | "imageUrl">
 > & {
   imageError: string;
+  imageErrorDetail?: PublishErrorDetail;
   isImageSpoiler: boolean;
   isUploading: boolean;
 };
@@ -72,11 +76,25 @@ type ThreadMediaState = Required<
 function createEmptyThreadMedia(): ThreadMediaState {
   return {
     imageError: "",
+    imageErrorDetail: undefined,
     imageName: "",
     imageUrl: "",
     isImageSpoiler: false,
     isUploading: false,
   };
+}
+
+function createImageErrorDetail(
+  message: string,
+  overrides: Partial<PublishErrorDetail> = {},
+) {
+  return createPublishErrorDetail({
+    source: "SNS auto upload",
+    stage: "upload-validation",
+    stageLabel: "이미지 첨부 확인",
+    message,
+    ...overrides,
+  });
 }
 
 function createInitialPollOptions() {
@@ -211,6 +229,8 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   const [platforms, setPlatforms] = useState<Platform[]>(["threads"]);
   const [createdAt, setCreatedAt] = useState(() => new Date().toISOString());
   const [error, setError] = useState("");
+  const [requestErrorDetail, setRequestErrorDetail] =
+    useState<PublishErrorDetail | null>(null);
   const [presetError, setPresetError] = useState("");
   const [results, setResults] = useState<PublishResultType[] | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
@@ -390,6 +410,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
   function clearImage(partIndex: number) {
     updateThreadMedia(partIndex, {
       imageError: "",
+      imageErrorDetail: undefined,
       imageName: "",
       imageUrl: "",
       isImageSpoiler: false,
@@ -593,11 +614,26 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       return;
     }
 
-    updateThreadMedia(partIndex, { imageError: "" });
+    updateThreadMedia(partIndex, {
+      imageError: "",
+      imageErrorDetail: undefined,
+    });
 
     if (isPollEnabled) {
       updateThreadMedia(partIndex, {
         imageError: "설문 게시에는 이미지를 함께 첨부할 수 없습니다.",
+        imageErrorDetail: createImageErrorDetail(
+          "설문 게시에는 이미지를 함께 첨부할 수 없습니다.",
+          {
+            errorKey: "IMAGE_POLL_CONFLICT",
+            category: "validation",
+            categoryLabel: "기능 조합",
+            displayTitle: "설문과 이미지를 함께 사용할 수 없습니다",
+            summary: "Threads API에서는 현재 설문 게시와 이미지 첨부를 한 게시물에 함께 전송할 수 없습니다.",
+            actions: ["설문 또는 이미지 첨부 중 하나를 해제합니다."],
+            retryable: false,
+          },
+        ),
       });
       event.target.value = "";
       return;
@@ -606,6 +642,18 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     if (isTextAttachmentEnabled) {
       updateThreadMedia(partIndex, {
         imageError: "텍스트 첨부 게시에는 이미지를 함께 첨부할 수 없습니다.",
+        imageErrorDetail: createImageErrorDetail(
+          "텍스트 첨부 게시에는 이미지를 함께 첨부할 수 없습니다.",
+          {
+            errorKey: "IMAGE_TEXT_ATTACHMENT_CONFLICT",
+            category: "validation",
+            categoryLabel: "기능 조합",
+            displayTitle: "텍스트 첨부와 이미지를 함께 사용할 수 없습니다",
+            summary: "Threads API에서는 텍스트 첨부와 이미지를 한 게시물에 함께 전송할 수 없습니다.",
+            actions: ["텍스트 첨부 또는 이미지 첨부 중 하나를 해제합니다."],
+            retryable: false,
+          },
+        ),
       });
       event.target.value = "";
       return;
@@ -614,6 +662,21 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       updateThreadMedia(partIndex, {
         imageError: "JPG, PNG, WebP 이미지만 첨부할 수 있습니다.",
+        imageErrorDetail: createImageErrorDetail(
+          "JPG, PNG, WebP 이미지만 첨부할 수 있습니다.",
+          {
+            errorKey: "IMAGE_FORMAT_UNSUPPORTED",
+            category: "media",
+            categoryLabel: "파일 형식",
+            displayTitle: "지원하지 않는 이미지 형식입니다",
+            summary: `선택한 파일 형식은 ${file.type || "확인 불가"}입니다.`,
+            actions: [
+              "이미지를 JPG, PNG 또는 WebP로 변환합니다.",
+              "변환한 파일을 다시 첨부합니다.",
+            ],
+            retryable: false,
+          },
+        ),
       });
       event.target.value = "";
       return;
@@ -622,6 +685,21 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
     if (file.size > MAX_IMAGE_SIZE_BYTES) {
       updateThreadMedia(partIndex, {
         imageError: "이미지는 8MB 이하로 첨부해 주세요.",
+        imageErrorDetail: createImageErrorDetail(
+          "이미지는 8MB 이하로 첨부해 주세요.",
+          {
+            errorKey: "IMAGE_FILE_TOO_LARGE",
+            category: "media",
+            categoryLabel: "파일 용량",
+            displayTitle: "이미지 파일 용량이 너무 큽니다",
+            summary: `선택한 파일은 ${(file.size / 1024 / 1024).toFixed(1)}MB이며 최대 8MB까지 업로드할 수 있습니다.`,
+            actions: [
+              "이미지를 압축하거나 가로·세로 크기를 줄입니다.",
+              "8MB 이하가 된 파일을 다시 첨부합니다.",
+            ],
+            retryable: false,
+          },
+        ),
       });
       event.target.value = "";
       return;
@@ -637,6 +715,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         body: formData,
       });
       const data = (await response.json()) as {
+        errorDetail?: PublishErrorDetail;
         message?: string;
         image?: {
           url?: string;
@@ -646,6 +725,11 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
       if (!response.ok || !data.image?.url) {
         updateThreadMedia(partIndex, {
           imageError: data.message ?? "이미지를 업로드하지 못했습니다.",
+          imageErrorDetail:
+            data.errorDetail ??
+            createImageErrorDetail(
+              data.message ?? "이미지를 업로드하지 못했습니다.",
+            ),
         });
         event.target.value = "";
         return;
@@ -653,13 +737,30 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
       updateThreadMedia(partIndex, {
         imageError: "",
+        imageErrorDetail: undefined,
         imageName: file.name,
         imageUrl: data.image.url,
       });
       setPlatforms(["threads"]);
-    } catch {
+    } catch (uploadError) {
+      const message =
+        uploadError instanceof Error
+          ? uploadError.message
+          : "이미지 업로드 중 문제가 발생했습니다.";
       updateThreadMedia(partIndex, {
         imageError: "이미지 업로드 중 문제가 발생했습니다.",
+        imageErrorDetail: createImageErrorDetail(message, {
+          errorKey: "IMAGE_UPLOAD_NETWORK_FAILED",
+          category: "network",
+          categoryLabel: "네트워크",
+          displayTitle: "이미지 업로드 서버에 연결하지 못했습니다",
+          summary: "브라우저와 Vercel Blob 업로드 서버 사이의 요청이 완료되지 않았습니다.",
+          actions: [
+            "인터넷 연결을 확인하고 잠시 후 이미지를 다시 선택합니다.",
+            "반복되면 오류 정보를 개발 담당자에게 전달합니다.",
+          ],
+          retryable: true,
+        }),
       });
       event.target.value = "";
     } finally {
@@ -1199,9 +1300,13 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
           ) : null}
 
           {media.imageError ? (
-            <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
-              {media.imageError}
-            </p>
+            media.imageErrorDetail ? (
+              <PublishErrorDetails compact detail={media.imageErrorDetail} />
+            ) : (
+              <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+                {media.imageError}
+              </p>
+            )
           ) : null}
         </div>
       </div>
@@ -1210,6 +1315,7 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
 
   async function handlePublish() {
     setError("");
+    setRequestErrorDetail(null);
     setTopicError("");
     setSpoilerError("");
     setPollError("");
@@ -1374,12 +1480,38 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         }),
       });
       const data = (await response.json()) as {
+        errorDetail?: PublishErrorDetail;
         message?: string;
         results?: PublishResultType[];
       };
 
       if (!response.ok || !data.results) {
-        setError(data.message ?? "게시 요청에 실패했습니다.");
+        const message = data.message ?? "게시 요청에 실패했습니다.";
+        setError(message);
+        setRequestErrorDetail(
+          data.errorDetail ??
+            createPublishErrorDetail({
+              source: "SNS auto upload",
+              stage: "request-validation",
+              stageLabel: "게시 요청 확인",
+              httpStatus: response.status,
+              message,
+              ...(response.status === 401
+                ? {
+                    errorKey: "APP_SESSION_EXPIRED",
+                    category: "authentication" as const,
+                    categoryLabel: "웹사이트 로그인",
+                    displayTitle: "웹사이트 로그인이 만료되었습니다",
+                    summary: "게시 요청 전에 SNS auto upload에 다시 로그인해야 합니다.",
+                    actions: [
+                      "로그인 페이지에서 팀 비밀번호로 다시 로그인합니다.",
+                      "작성 화면으로 돌아와 게시를 다시 시도합니다.",
+                    ],
+                    retryable: false,
+                  }
+                : {}),
+            }),
+        );
         return;
       }
 
@@ -1406,8 +1538,20 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         setThreadMedia([createEmptyThreadMedia()]);
         setCreatedAt(new Date().toISOString());
       }
-    } catch {
+    } catch (requestError) {
+      const message =
+        requestError instanceof Error
+          ? requestError.message
+          : "게시 요청 중 문제가 발생했습니다.";
       setError("게시 요청 중 문제가 발생했습니다.");
+      setRequestErrorDetail(
+        createPublishErrorDetail({
+          source: "SNS auto upload",
+          stage: "network",
+          stageLabel: "게시 요청 전송",
+          message,
+        }),
+      );
     } finally {
       setIsPublishing(false);
     }
@@ -1694,7 +1838,13 @@ export function PostComposer({ onPublished }: { onPublished: () => void }) {
         </div>
 
         <div className="mt-5 flex flex-col gap-3 border-t border-zinc-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <Toast message={error} />
+          <div className="min-w-0 flex-1">
+            {requestErrorDetail ? (
+              <PublishErrorDetails compact detail={requestErrorDetail} />
+            ) : (
+              <Toast message={error} />
+            )}
+          </div>
           <button
             className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:bg-zinc-400 sm:w-auto"
             type="button"

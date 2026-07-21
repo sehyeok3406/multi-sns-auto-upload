@@ -1,14 +1,24 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { replyToThreadsMedia } from "@/lib/publisher/threadsInbox";
+import {
+  createAppSessionErrorDetail,
+  createPublishErrorDetail,
+} from "@/lib/publisher/errorDetails";
 import { THREADS_TEXT_LIMIT, validateThreadsText } from "@/lib/threadsLimits";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   if (!(await isAuthenticated())) {
+    const errorDetail = createAppSessionErrorDetail({
+      stage: "reply-request",
+      stageLabel: "답글 요청 인증",
+      itemLabel: "답글",
+    });
+
     return NextResponse.json(
-      { message: "로그인이 필요합니다." },
+      { message: "로그인이 필요합니다.", errorDetail },
       { status: 401 },
     );
   }
@@ -68,7 +78,7 @@ export async function POST(request: Request) {
           success: false,
           message,
           postedAt: new Date().toISOString(),
-          errorDetail: {
+          errorDetail: createPublishErrorDetail({
             source: "SNS auto upload",
             stage: "network",
             stageLabel: "답글 요청 실행",
@@ -76,7 +86,7 @@ export async function POST(request: Request) {
             message,
             retryHint:
               "네트워크 오류 또는 Threads API 응답 지연일 수 있습니다. 실제 답글 등록 여부를 먼저 확인한 뒤 다시 시도하세요.",
-          },
+          }),
         },
       },
       { status: 502 },

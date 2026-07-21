@@ -7,6 +7,7 @@ import {
   publishThreadsContainerWithRetry,
 } from "@/lib/publisher/threadsApi";
 import { createSpoilerTextEntities } from "@/lib/threadsSpoilers";
+import { createPublishErrorDetail } from "@/lib/publisher/errorDetails";
 import type {
   PublishErrorDetail,
   PublishResult,
@@ -31,10 +32,10 @@ function getThreadItemLabel(index: number, total: number) {
 function createLocalErrorDetail(
   overrides: Partial<PublishErrorDetail>,
 ): PublishErrorDetail {
-  return {
+  return createPublishErrorDetail({
     source: "SNS auto upload",
     ...overrides,
-  };
+  });
 }
 
 export async function publishToThreads(

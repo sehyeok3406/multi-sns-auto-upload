@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthenticated } from "@/lib/auth";
 import { addPostHistory } from "@/lib/postHistory";
+import { createAppSessionErrorDetail } from "@/lib/publisher/errorDetails";
 import { publishToThreads } from "@/lib/publisher/threadsPublisher";
 import { publishToX } from "@/lib/publisher/xPublisher";
 import { validateTopicTag } from "@/lib/topicTags";
@@ -300,8 +301,14 @@ function parseTextAttachment(value: unknown) {
 
 export async function POST(request: Request) {
   if (!(await isAuthenticated())) {
+    const errorDetail = createAppSessionErrorDetail({
+      stage: "publish-request",
+      stageLabel: "게시 요청 인증",
+      itemLabel: "게시글",
+    });
+
     return NextResponse.json(
-      { message: "로그인이 필요합니다." },
+      { message: "로그인이 필요합니다.", errorDetail },
       { status: 401 },
     );
   }

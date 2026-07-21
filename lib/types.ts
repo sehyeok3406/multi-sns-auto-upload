@@ -13,8 +13,29 @@ export type AccountStatuses = {
   checkedAt: string;
 };
 
+export type PublishErrorCategory =
+  | "configuration"
+  | "authentication"
+  | "permission"
+  | "validation"
+  | "media"
+  | "rate-limit"
+  | "network"
+  | "service"
+  | "not-found"
+  | "policy"
+  | "unknown";
+
 export type PublishErrorDetail = {
   source: string;
+  errorKey?: string;
+  category?: PublishErrorCategory;
+  categoryLabel?: string;
+  displayTitle?: string;
+  summary?: string;
+  actions?: string[];
+  retryable?: boolean;
+  occurredAt?: string;
   stage?: string;
   stageLabel?: string;
   itemIndex?: number;

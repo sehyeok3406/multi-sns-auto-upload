@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PublishErrorDetails } from "@/components/PublishErrorDetails";
+import { createErrorDetailFromUnknown } from "@/lib/publisher/errorDetails";
 import {
   THREADS_TEXT_LIMIT,
   THREADS_TEXT_WARNING_THRESHOLD,
@@ -20,6 +21,7 @@ import {
   validateThreadsText,
 } from "@/lib/threadsLimits";
 import type {
+  PublishErrorDetail,
   ThreadsInsightValues,
   ThreadsInsightsSummary,
   ThreadsMediaSummary,
@@ -105,6 +107,8 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
   const [postInsightMap, setPostInsightMap] = useState<Record<string, PostInsightPreview>>({});
   const [isLoadingPostInsights, setIsLoadingPostInsights] = useState(false);
   const [postInsightError, setPostInsightError] = useState("");
+  const [postInsightErrorDetail, setPostInsightErrorDetail] =
+    useState<PublishErrorDetail | null>(null);
   const [rootReplyContent, setRootReplyContent] = useState("");
   const [activeReplyId, setActiveReplyId] = useState("");
   const [inlineReplyContent, setInlineReplyContent] = useState("");
@@ -112,7 +116,11 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
   const [isLoadingReplies, setIsLoadingReplies] = useState(false);
   const [submittingReplyTargetId, setSubmittingReplyTargetId] = useState("");
   const [postError, setPostError] = useState("");
+  const [postErrorDetail, setPostErrorDetail] =
+    useState<PublishErrorDetail | null>(null);
   const [replyError, setReplyError] = useState("");
+  const [replyErrorDetail, setReplyErrorDetail] =
+    useState<PublishErrorDetail | null>(null);
   const [rootReplyError, setRootReplyError] = useState("");
   const [inlineReplyError, setInlineReplyError] = useState("");
   const [rootReplyResult, setRootReplyResult] =
@@ -130,12 +138,14 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
   const loadPostInsights = useCallback(async (limit: number) => {
     setIsLoadingPostInsights(true);
     setPostInsightError("");
+    setPostInsightErrorDetail(null);
 
     try {
       const response = await fetch(`/api/threads/insights?limit=${limit}`, {
         cache: "no-store",
       });
       const data = (await response.json()) as ThreadsInsightsSummary & {
+        errorDetail?: PublishErrorDetail;
         message?: string;
       };
 
@@ -144,6 +154,7 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
         setPostInsightError(
           data.message ?? "Threads 게시 성과를 불러오지 못했습니다.",
         );
+        setPostInsightErrorDetail(data.errorDetail ?? null);
         return;
       }
 
@@ -158,9 +169,17 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
       }
 
       setPostInsightMap(nextInsightMap);
-    } catch {
+    } catch (insightError) {
       setPostInsightMap({});
       setPostInsightError("Threads 게시 성과 요청 중 문제가 발생했습니다.");
+      setPostInsightErrorDetail(
+        createErrorDetailFromUnknown(insightError, {
+          source: "SNS auto upload",
+          stage: "network",
+          stageLabel: "게시 성과 요청",
+          itemLabel: "인사이트",
+        }),
+      );
     } finally {
       setIsLoadingPostInsights(false);
     }
@@ -169,18 +188,21 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
   const loadPosts = useCallback(async () => {
     setIsLoadingPosts(true);
     setPostError("");
+    setPostErrorDetail(null);
 
     try {
       const response = await fetch("/api/threads/posts?limit=15", {
         cache: "no-store",
       });
       const data = (await response.json()) as {
+        errorDetail?: PublishErrorDetail;
         message?: string;
         posts?: ThreadsMediaSummary[];
       };
 
       if (!response.ok) {
         setPostError(data.message ?? "Threads 게시물을 불러오지 못했습니다.");
+        setPostErrorDetail(data.errorDetail ?? null);
         setPosts([]);
         setSelectedPostId("");
         setPostInsightMap({});
@@ -206,8 +228,16 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
 
         return nextSelectedPostId;
       });
-    } catch {
+    } catch (postsError) {
       setPostError("Threads 게시물 요청 중 문제가 발생했습니다.");
+      setPostErrorDetail(
+        createErrorDetailFromUnknown(postsError, {
+          source: "SNS auto upload",
+          stage: "network",
+          stageLabel: "내 게시물 요청",
+          itemLabel: "게시물 목록",
+        }),
+      );
       setPosts([]);
       setSelectedPostId("");
       setPostInsightMap({});
@@ -224,6 +254,7 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
 
     setIsLoadingReplies(true);
     setReplyError("");
+    setReplyErrorDetail(null);
 
     try {
       const response = await fetch(
@@ -231,19 +262,29 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
         { cache: "no-store" },
       );
       const data = (await response.json()) as {
+        errorDetail?: PublishErrorDetail;
         message?: string;
         replies?: ThreadsReply[];
       };
 
       if (!response.ok) {
         setReplyError(data.message ?? "Threads 댓글을 불러오지 못했습니다.");
+        setReplyErrorDetail(data.errorDetail ?? null);
         setReplies([]);
         return;
       }
 
       setReplies(data.replies ?? []);
-    } catch {
+    } catch (repliesError) {
       setReplyError("Threads 댓글 요청 중 문제가 발생했습니다.");
+      setReplyErrorDetail(
+        createErrorDetailFromUnknown(repliesError, {
+          source: "SNS auto upload",
+          stage: "network",
+          stageLabel: "댓글 요청",
+          itemLabel: "댓글 목록",
+        }),
+      );
       setReplies([]);
     } finally {
       setIsLoadingReplies(false);
@@ -260,6 +301,7 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
     setRootReplyError("");
     setInlineReplyError("");
     setReplyError("");
+    setReplyErrorDetail(null);
   }
 
   async function submitReply({
@@ -309,6 +351,8 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
         }),
       });
       const data = (await response.json()) as {
+        errorDetail?: PublishErrorDetail;
+        message?: string;
         result?: ThreadsReplyPublishResult;
       };
       const result = data.result;
@@ -317,8 +361,20 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
         setResult(
           result ?? {
             success: false,
-            message: "Threads 답글 게시에 실패했습니다.",
+            message: data.message ?? "Threads 답글 게시에 실패했습니다.",
             postedAt: new Date().toISOString(),
+            errorDetail:
+              data.errorDetail ??
+              createErrorDetailFromUnknown(
+                data.message ?? "Threads 답글 게시에 실패했습니다.",
+                {
+                  source: "SNS auto upload",
+                  stage: "reply-validation",
+                  stageLabel: "답글 요청 확인",
+                  itemLabel: "답글",
+                  httpStatus: response.status,
+                },
+              ),
           },
         );
         return;
@@ -327,11 +383,17 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
       setResult(result);
       onSuccess();
       await loadReplies();
-    } catch {
+    } catch (replySubmitError) {
       setResult({
         success: false,
         message: "Threads 답글 게시 중 문제가 발생했습니다.",
         postedAt: new Date().toISOString(),
+        errorDetail: createErrorDetailFromUnknown(replySubmitError, {
+          source: "SNS auto upload",
+          stage: "network",
+          stageLabel: "답글 요청 전송",
+          itemLabel: "답글",
+        }),
       });
     } finally {
       setSubmittingReplyTargetId("");
@@ -424,14 +486,22 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
           </div>
 
           {postError ? (
-            <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
-              {postError}
-            </p>
+            postErrorDetail ? (
+              <PublishErrorDetails compact detail={postErrorDetail} />
+            ) : (
+              <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+                {postError}
+              </p>
+            )
           ) : null}
           {postInsightError && !postError ? (
-            <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
-              인사이트 표시 실패: {postInsightError}
-            </p>
+            postInsightErrorDetail ? (
+              <PublishErrorDetails compact detail={postInsightErrorDetail} />
+            ) : (
+              <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+                인사이트 표시 실패: {postInsightError}
+              </p>
+            )
           ) : null}
 
           <div className="mt-3 space-y-2">
@@ -664,9 +734,13 @@ export function ThreadsInbox({ refreshToken = 0 }: { refreshToken?: number }) {
                 </div>
 
                 {replyError ? (
-                  <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
-                    {replyError}
-                  </p>
+                  replyErrorDetail ? (
+                    <PublishErrorDetails compact detail={replyErrorDetail} />
+                  ) : (
+                    <p className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+                      {replyError}
+                    </p>
+                  )
                 ) : null}
 
                 {replyError ? null : (

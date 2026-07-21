@@ -8,6 +8,7 @@ import {
   getThreadsJson,
   publishThreadsContainerWithRetry,
 } from "@/lib/publisher/threadsApi";
+import { createPublishErrorDetail } from "@/lib/publisher/errorDetails";
 import type {
   ThreadsMediaSummary,
   ThreadsReply,
@@ -189,7 +190,7 @@ export async function replyToThreadsMedia(
     return {
       success: false,
       message: "Threads API did not return a reply creation id.",
-      errorDetail: {
+      errorDetail: createPublishErrorDetail({
         source: "Threads API",
         stage: "container",
         stageLabel: "답글 컨테이너 생성",
@@ -197,7 +198,7 @@ export async function replyToThreadsMedia(
         attempts: containerResponse.attempts,
         message: "Threads API가 답글 컨테이너 ID를 반환하지 않았습니다.",
         retryHint: "같은 답글을 다시 시도하고, 반복되면 Meta API 응답 로그를 확인하세요.",
-      },
+      }),
       postedAt,
     };
   }
@@ -241,7 +242,7 @@ export async function replyToThreadsMedia(
     return {
       success: false,
       message: "Threads API가 발행된 답글 ID를 반환하지 않았습니다.",
-      errorDetail: {
+      errorDetail: createPublishErrorDetail({
         source: "Threads API",
         stage: "publish",
         stageLabel: "답글 발행",
@@ -250,7 +251,7 @@ export async function replyToThreadsMedia(
         message: "Threads API가 발행된 답글 ID를 반환하지 않았습니다.",
         retryHint:
           "Threads에서 실제 답글 등록 여부를 먼저 확인하세요. 답글이 없다면 다시 시도하고, 반복되면 Meta API 응답 로그를 확인하세요.",
-      },
+      }),
       postedAt,
     };
   }

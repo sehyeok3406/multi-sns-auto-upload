@@ -13,7 +13,10 @@ import {
   Trophy,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { PublishErrorDetails } from "@/components/PublishErrorDetails";
+import { createErrorDetailFromUnknown } from "@/lib/publisher/errorDetails";
 import type {
+  PublishErrorDetail,
   ThreadsInsightMetric,
   ThreadsInsightsSummary,
   ThreadsPostInsight,
@@ -105,6 +108,8 @@ export function ThreadsInsightsPanel() {
   const [summary, setSummary] = useState<ThreadsInsightsSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [errorDetail, setErrorDetail] =
+    useState<PublishErrorDetail | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("views");
 
   const sortedPosts = useMemo(
@@ -116,24 +121,35 @@ export function ThreadsInsightsPanel() {
   async function loadInsights() {
     setIsLoading(true);
     setError("");
+    setErrorDetail(null);
 
     try {
       const response = await fetch("/api/threads/insights?limit=20", {
         cache: "no-store",
       });
       const data = (await response.json()) as ThreadsInsightsSummary & {
+        errorDetail?: PublishErrorDetail;
         message?: string;
       };
 
       if (!response.ok) {
         setError(data.message ?? "Threads 게시 성과를 불러오지 못했습니다.");
+        setErrorDetail(data.errorDetail ?? null);
         setSummary(null);
         return;
       }
 
       setSummary(data);
-    } catch {
+    } catch (insightsError) {
       setError("Threads 게시 성과 요청 중 문제가 발생했습니다.");
+      setErrorDetail(
+        createErrorDetailFromUnknown(insightsError, {
+          source: "SNS auto upload",
+          stage: "network",
+          stageLabel: "게시 성과 요청",
+          itemLabel: "인사이트",
+        }),
+      );
       setSummary(null);
     } finally {
       setIsLoading(false);
@@ -180,9 +196,13 @@ export function ThreadsInsightsPanel() {
       </div>
 
       {error ? (
-        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
-          {error}
-        </p>
+        errorDetail ? (
+          <PublishErrorDetails detail={errorDetail} />
+        ) : (
+          <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+            {error}
+          </p>
+        )
       ) : null}
 
       {summary ? (

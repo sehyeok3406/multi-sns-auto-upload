@@ -19,7 +19,8 @@ export type ThreadsApiResponse<T> =
   | string;
 
 type ThreadsContainerStatusResponse = {
-  status_code?: string;
+  id?: string;
+  status?: string;
   error_message?: string;
 };
 
@@ -32,7 +33,7 @@ type ThreadsRequestResult<T> = {
 type ThreadsContainerReadinessResult = {
   ok: boolean;
   attempts: number;
-  statusCode?: string;
+  containerStatus?: string;
   errorDetail?: PublishErrorDetail;
 };
 
@@ -172,19 +173,22 @@ function getRetryHint(detail: PublishErrorDetail) {
 }
 
 function createThreadsContainerStatusError(
-  statusCode: string,
+  containerStatus: string,
+  errorMessage: string | undefined,
   context: Partial<PublishErrorDetail>,
 ): PublishErrorDetail {
   const detail: PublishErrorDetail = {
     source: "Threads API",
+    ...context,
     stage: "container-status",
     stageLabel: "컨테이너 준비 확인",
-    message: `Threads 컨테이너 상태가 ${statusCode}입니다.`,
+    message: errorMessage
+      ? `Threads 컨테이너 처리 실패: ${errorMessage}`
+      : `Threads 컨테이너 상태가 ${containerStatus}입니다.`,
     retryHint:
-      statusCode === "ERROR"
+      containerStatus === "ERROR"
         ? "이미지 URL이 공개 접근 가능한지, 파일 형식과 용량이 Threads 조건에 맞는지 확인하세요."
         : "컨테이너가 만료되었습니다. 같은 게시글로 다시 게시를 시도하세요.",
-    ...context,
   };
 
   return detail;
@@ -328,7 +332,7 @@ export async function waitForThreadsContainer(
   accessToken: string,
   context: Partial<PublishErrorDetail> = {},
 ): Promise<ThreadsContainerReadinessResult> {
-  let lastStatusCode: string | undefined;
+  let lastContainerStatus: string | undefined;
 
   for (
     let attemptIndex = 0;
@@ -338,32 +342,36 @@ export async function waitForThreadsContainer(
     const response = await getThreadsJson<ThreadsContainerStatusResponse>(
       `${THREADS_GRAPH_BASE_URL}/${encodeURIComponent(creationId)}`,
       {
-        fields: "status_code",
+        fields: "id,status,error_message",
         access_token: accessToken,
       },
     );
 
     if (response.ok && typeof response.body !== "string") {
-      const statusCode = response.body.status_code?.toUpperCase();
-      lastStatusCode = statusCode;
+      const containerStatus = response.body.status?.toUpperCase();
+      lastContainerStatus = containerStatus;
 
-      if (statusCode === "FINISHED" || statusCode === "PUBLISHED") {
+      if (containerStatus === "FINISHED" || containerStatus === "PUBLISHED") {
         return {
           ok: true,
           attempts: attemptIndex + 1,
-          statusCode,
+          containerStatus,
         };
       }
 
-      if (statusCode === "ERROR" || statusCode === "EXPIRED") {
+      if (containerStatus === "ERROR" || containerStatus === "EXPIRED") {
         return {
           ok: false,
           attempts: attemptIndex + 1,
-          statusCode,
-          errorDetail: createThreadsContainerStatusError(statusCode, {
-            ...context,
-            attempts: attemptIndex + 1,
-          }),
+          containerStatus,
+          errorDetail: createThreadsContainerStatusError(
+            containerStatus,
+            response.body.error_message,
+            {
+              ...context,
+              attempts: attemptIndex + 1,
+            },
+          ),
         };
       }
     } else if (
@@ -374,11 +382,11 @@ export async function waitForThreadsContainer(
         ok: false,
         attempts: attemptIndex + 1,
         errorDetail: createThreadsErrorDetail(response.status, response.body, {
+          ...context,
           stage: "container-status",
           stageLabel: "컨테이너 준비 확인",
           retryHint:
-            "Threads 컨테이너 상태 조회 권한과 creation_id 값을 확인하세요.",
-          ...context,
+            "Threads 컨테이너 상태 조회 필드와 creation_id, 토큰 권한을 확인하세요.",
           attempts: attemptIndex + 1,
         }),
       };
@@ -394,7 +402,7 @@ export async function waitForThreadsContainer(
   return {
     ok: true,
     attempts: THREADS_CONTAINER_STATUS_DELAYS_MS.length + 1,
-    statusCode: lastStatusCode,
+    containerStatus: lastContainerStatus,
   };
 }
 
